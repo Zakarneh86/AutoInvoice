@@ -1,0 +1,156 @@
+{
+    "name": "po_details",
+    "schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+            "po_info": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                    "po_number": {"type": "string"},
+                    "po_date": {"type": "string"},
+                    "po_total_value": {"type": ["number", "null"]},
+                    "po_currency": {"type": "string"},
+                    "invoicing_type": {
+                        "type": "string",
+                        "enum": [
+                            "daily_rate",
+                            "hourly_rate",
+                            "mixed",
+                            "not_clear"
+                        ]
+                    }
+                },
+                "required": [
+                    "po_number",
+                    "po_date",
+                    "po_total_value",
+                    "po_currency",
+                    "invoicing_type"
+                ]
+            },
+
+            "working_hours": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "onshore_or_offshore": {
+                            "type": "string",
+                            "enum": [
+                                "onshore",
+                                "offshore",
+                                "not_specified"
+                            ]
+                        },
+                        "normal_week_day": {"type": ["number", "null"]},
+                        "ramadan_day": {"type": ["number", "null"]},
+                        "saturday": {"type": ["number", "null"]},
+                        "friday": {"type": ["number", "null"]}
+                    },
+                    "required": [
+                        "onshore_or_offshore",
+                        "normal_week_day",
+                        "ramadan_day",
+                        "saturday",
+                        "friday"
+                    ]
+                }
+            },
+
+            "daily_rate": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "role_name": {"type": "string"},
+                        "onshore_or_offshore": {
+                            "type": "string",
+                            "enum": [
+                                "onshore",
+                                "offshore",
+                                "not_specified"
+                            ]
+                        },
+                        "normal_week_day": {"type": ["number", "null"]},
+                        "saturday": {"type": ["number", "null"]},
+                        "friday": {"type": ["number", "null"]},
+                        "ramadan_day": {"type": ["number", "null"]},
+                        "official_holidays": {"type": ["number", "null"]},
+                        "rate_source": {
+                            "type": "string",
+                            "enum": [
+                                "explicit",
+                                "calculated",
+                                "null"
+                            ]
+                        },
+                        "calculation_note": {"type": ["string", "null"]}
+                    },
+                    "required": [
+                        "role_name",
+                        "onshore_or_offshore",
+                        "normal_week_day",
+                        "saturday",
+                        "friday",
+                        "ramadan_day",
+                        "official_holidays",
+                        "rate_source",
+                        "calculation_note"
+                    ]
+                }
+            },
+
+            "hourly_rate": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "role_name": {"type": "string"},
+                        "onshore_or_offshore": {
+                            "type": "string",
+                            "enum": [
+                                "onshore",
+                                "offshore",
+                                "not_specified"
+                            ]
+                        },
+                        "normal_week_day": {"type": ["number", "null"]},
+                        "overtime_week_day": {"type": ["number", "null"]},
+                        "saturday": {"type": ["number", "null"]},
+                        "friday": {"type": ["number", "null"]},
+                        "rate_source": {
+                            "type": "string",
+                            "enum": [
+                                "explicit",
+                                "calculated",
+                                "null"
+                            ]
+                        },
+                        "calculation_note": {"type": ["string", "null"]}
+                    },
+                    "required": [
+                        "role_name",
+                        "onshore_or_offshore",
+                        "normal_week_day",
+                        "overtime_week_day",
+                        "saturday",
+                        "friday",
+                        "rate_source",
+                        "calculation_note"
+                    ]
+                }
+            }
+        },
+        "required": [
+            "po_info",
+            "working_hours",
+            "daily_rate",
+            "hourly_rate"
+        ]
+    }
+}

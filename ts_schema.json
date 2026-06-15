@@ -1,0 +1,48 @@
+{
+    "name": "timesheet_details",
+    "schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+            "client_order_number": {"type": "string"},
+            "service_ref_number": {"type": "string"},
+            "engineer_name": {"type": "string"},
+            "client": {"type": "string"},
+            "plant": {"type": "string"},
+            "entries": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "day_name": {"type": "string", "enum":["SUN","MON","TUE","WED","THUR","FRI","SAT"]},
+                        "date": {"type": "string"},
+                        "hours_on_site": {"type": ["string", "null"]},
+                        "from_time": {"type": ["string", "null"]},
+                        "to_time": {"type": ["string", "null"]},
+                        "travel_hours": {"type": ["number", "null"]},
+                        "friday_hours": {"type": ["number", "null"]},
+                        "saturday_hours": {"type": ["number", "null"]}
+                    },
+                    "required": [
+                        "day_name",
+                        "date",
+                        "hours_on_site",
+                        "from_time",
+                        "to_time",
+                        "travel_hours",
+                        "friday_hours",
+                        "saturday_hours"
+                    ]
+                }
+            }
+        },
+        "required": [
+            "client_order_number",
+            "service_ref_number",
+            "engineer_name",
+            "client",
+            "plant",
+            "entries"
+        ]
+    }}
