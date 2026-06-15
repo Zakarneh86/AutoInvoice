@@ -38,7 +38,7 @@ location = st.selectbox("Location Droplist", LOCATION_OPTIONS)
 
 timesheets = st.file_uploader(
     "Timesheets upload area",
-    type=["pdf", "xlsx", "xls", "csv"],
+    type=["pdf", "png"],
     accept_multiple_files=True,
 )
 
