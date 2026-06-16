@@ -20,7 +20,7 @@ from dateutil import parser
 ## Initialize OpenAI client
 def client (APIkey):
     try:
-        client = OpenAI(APIkey = APIkey)
+        client = OpenAI(api_key = APIkey)
         error = False
         status_text = "Client initialized successfully."
         return client, error, status_text
