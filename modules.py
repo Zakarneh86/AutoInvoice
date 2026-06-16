@@ -230,23 +230,30 @@ def generate_ts_details(timesheet):
   return json.loads(response.output_text)
 
 ## Timesheets Detail Extraction (This Needs to be Modified)
-def get_timesheets_data(path):
-  ts_details = {}
-  for file in os.listdir(path):
-    print(path+file)
-    timesheet = file_to_base64(path+file)
-    ts_json = generate_ts_details(timesheet)
+def get_timesheets_data(uploaded_files):
+    ts_details = {}
 
-    pro_info = {"project_name": ts_json['client'], "order_number": ts_json['client_order_number']}
-    eng_name = ts_json['engineer_name']
+    for uploaded_file in uploaded_files:
+        print(uploaded_file.name)
+        timesheet = file_to_base64(uploaded_file)
+        ts_json = generate_ts_details(timesheet)
 
-    if 'pro_info' not in ts_details:
-      ts_details['pro_info'] = pro_info
-    if eng_name not in ts_details:
-      ts_details[eng_name]= {'ts1': ts_json['entries']}
-    else:
-      ts_details[eng_name]['ts_'+str(len(ts_details[eng_name].keys())+1)] = ts_json['entries']
-  return ts_details
+        pro_info = {
+            "project_name": ts_json["client"],
+            "order_number": ts_json["client_order_number"],
+        }
+        eng_name = ts_json["engineer_name"]
+
+        if "pro_info" not in ts_details:
+            ts_details["pro_info"] = pro_info
+
+        if eng_name not in ts_details:
+            ts_details[eng_name] = {"ts1": ts_json["entries"]}
+        else:
+            timesheet_count = len(ts_details[eng_name].keys()) + 1
+            ts_details[eng_name][f"ts_{timesheet_count}"] = ts_json["entries"]
+
+    return ts_details
 
 ##################################
 #      Time Classification       #
