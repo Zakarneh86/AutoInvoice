@@ -6,7 +6,7 @@ import modules
 
 EXCEL_MIME_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
-po_master, po_working_hours, po_daily_rates, po_hourly_rates = modules.get_po_data()
+po_master, po_working_hours, po_daily_rates, po_hourly_rates = modules.get_orders_data()
 
 PO_OPTIONS = list(po_master['po_number'].unique())
 
