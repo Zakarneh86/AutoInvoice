@@ -1,7 +1,11 @@
 import json
 import os
+from io import BytesIO
 from openai import OpenAI
-import pymupdf
+try:
+    import pymupdf
+except ModuleNotFoundError:
+    import fitz as pymupdf
 from pathlib import Path
 import base64
 import pandas as pd
@@ -31,7 +35,7 @@ with open("po_schema.json", "r") as f:
     po_schema = json.load(f)
 
 ## Loading Timesheet Json Schema
-with open("timesheet_schema.json", "r") as f:
+with open("ts_schema.json", "r") as f:
     timesheet_schema = json.load(f)
 
 ## PO Reader Prompts
@@ -362,14 +366,13 @@ def classify_entry(entry, minimum_normal_hours):
 
 # Calculation Excel Sheet Generator (This Needs to be Modified)
 def fill_calculation_excel(
-    output_path,
     ts_details,
     po_hourly_rates,
     po_working_hours,
     role,
     location
 ):
-    template_path = "calculation_template.xlsx"
+    template_path = "Calculation.xlsx"
 
     po_number = int(ts_details["pro_info"]["order_number"])
 
@@ -447,4 +450,8 @@ def fill_calculation_excel(
         ws[f'{block["cols"]["fri"]}38'] = friday_rate
         ws[f'{block["cols"]["sat"]}38'] = saturday_rate
 
-    wb.save(output_path)
+    excel_file = BytesIO()
+    wb.save(excel_file)
+    excel_file.seek(0)
+
+    return excel_file
