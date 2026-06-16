@@ -17,10 +17,13 @@ po_master, po_working_hours, po_daily_rates, po_hourly_rates = modules.get_order
 PO_OPTIONS = list(po_master['po_number'].unique())
 po = st.selectbox("PO Droplist", PO_OPTIONS)
 
+LOCATION_OPTIONS = list(po_hourly_rates['onshore_or_offshore'][po_hourly_rates['po_number'] == po].unique())
+location = st.selectbox("Location Droplist", LOCATION_OPTIONS)
 
-ROLE_OPTIONS = list(po_hourly_rates['role_name'][po_hourly_rates['po_number'] == po])
 
-LOCATION_OPTIONS = list(po_hourly_rates['onshore_or_offshore'][po_hourly_rates['po_number'] == po])
+ROLE_OPTIONS = list(po_hourly_rates['role_name'][(po_hourly_rates['po_number'] == po) & (po_hourly_rates['onshore_or_offshore'] == location)])
+
+
 
 
 
@@ -29,7 +32,7 @@ LOCATION_OPTIONS = list(po_hourly_rates['onshore_or_offshore'][po_hourly_rates['
 
 
 role = st.selectbox("Role Droplist", ROLE_OPTIONS)
-location = st.selectbox("Location Droplist", LOCATION_OPTIONS)
+
 
 timesheets = st.file_uploader(
     "Timesheets upload area",
