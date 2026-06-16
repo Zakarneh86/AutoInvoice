@@ -371,14 +371,13 @@ def fill_calculation_excel(
     po_hourly_rates,
     po_working_hours,
     role,
-    location
+    location,
+    po
 ):
     template_path = "Calculation.xlsx"
 
-    po_number = int(ts_details["pro_info"]["order_number"])
-
-    rate_row = po_hourly_rates[(po_hourly_rates["po_number"] == po_number) & (po_hourly_rates["role_name"] == role) & (po_hourly_rates["onshore_or_offshore"] == location)].iloc[0]
-    hours_row = po_working_hours[(po_working_hours["po_number"] == po_number) & (po_working_hours["onshore_or_offshore"] == location)].iloc[0]
+    rate_row = po_hourly_rates[(po_hourly_rates["po_number"] == po) & (po_hourly_rates["role_name"] == role) & (po_hourly_rates["onshore_or_offshore"] == location)].iloc[0]
+    hours_row = po_working_hours[(po_working_hours["po_number"] == po) & (po_working_hours["onshore_or_offshore"] == location)].iloc[0]
 
     normal_rate = rate_row["normal_week_day"]
     ot_rate = rate_row["overtime_week_day"]
@@ -391,7 +390,7 @@ def fill_calculation_excel(
     ws = wb.active
 
     ws["B2"] = ts_details["pro_info"]["project_name"]
-    ws["B3"] = po_number
+    ws["B3"] = po
 
     all_dates = set()
     engineer_data = {}

@@ -67,6 +67,7 @@ if all(value is not None for value in required_excel_inputs.values()):
             required_excel_inputs["po_working_hours"],
             role,
             location,
+            po
         )
         st.session_state["calculation_excel"] = excel_file.getvalue()
 
