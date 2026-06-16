@@ -3,6 +3,12 @@ import pandas as pd
 import streamlit as st
 import modules
 
+apiKeys = st.secrets["API_Keys"]
+openAiKey = apiKeys["openAI"]
+
+client = modules.client(openAiKey)
+
+
 st.title("Auto Invoice")
 st.set_page_config(
     page_title="Auto Invoice",
