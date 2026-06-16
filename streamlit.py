@@ -3,39 +3,31 @@ import pandas as pd
 import streamlit as st
 import modules
 
-
-EXCEL_MIME_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-
-po_master, po_working_hours, po_daily_rates, po_hourly_rates = modules.get_orders_data()
-
-PO_OPTIONS = list(po_master['po_number'].unique())
-
-
-ROLE_OPTIONS = [
-    "Select role",
-    "Project Manager",
-    "Business Analyst",
-    "Developer",
-    "QA Engineer",
-]
-
-LOCATION_OPTIONS = [
-    "Select location",
-    "Onsite",
-    "Offshore",
-    "Remote",
-]
-
-
+st.title("Auto Invoice")
 st.set_page_config(
     page_title="Auto Invoice",
     page_icon=":page_facing_up:",
     layout="centered",
 )
 
-st.title("Auto Invoice")
+EXCEL_MIME_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
+po_master, po_working_hours, po_daily_rates, po_hourly_rates = modules.get_orders_data()
+
+PO_OPTIONS = list(po_master['po_number'].unique())
 po = st.selectbox("PO Droplist", PO_OPTIONS)
+
+
+ROLE_OPTIONS = list(po_hourly_rates['role_name'][po_hourly_rates['po_number'] == po])
+
+LOCATION_OPTIONS = list(po_hourly_rates['onshore_or_offshore'][po_hourly_rates['po_number'] == po])
+
+
+
+
+
+
+
 role = st.selectbox("Role Droplist", ROLE_OPTIONS)
 location = st.selectbox("Location Droplist", LOCATION_OPTIONS)
 
