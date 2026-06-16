@@ -229,7 +229,7 @@ def generate_ts_details(timesheet):
 
   return json.loads(response.output_text)
 
-## Timesheets Detail Extraction (This Needs to be Modified)
+## Timesheets Detail Extraction
 def get_timesheets_data(uploaded_files):
     ts_details = {}
 
