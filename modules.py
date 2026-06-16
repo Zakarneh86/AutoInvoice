@@ -206,7 +206,7 @@ def file_to_base64(uploaded_file, dpi=300):
   return images
 
 ## Timesheet Details Extraction using OpenAI
-def generate_ts_details(timesheet):
+def generate_ts_details(timesheet, client):
   user_content = [{"type": "input_text", "text": "Extract the timesheet data."}]
   for image in timesheet:
     user_content.append({"type": "input_image", "image_url": f"data:image/png;base64,{image}"})
@@ -235,13 +235,13 @@ def generate_ts_details(timesheet):
   return json.loads(response.output_text)
 
 ## Timesheets Detail Extraction
-def get_timesheets_data(uploaded_files):
+def get_timesheets_data(uploaded_files, client):
     ts_details = {}
 
     for uploaded_file in uploaded_files:
         print(uploaded_file.name)
         timesheet = file_to_base64(uploaded_file)
-        ts_json = generate_ts_details(timesheet)
+        ts_json = generate_ts_details(timesheet, client)
 
         pro_info = {
             "project_name": ts_json["client"],
