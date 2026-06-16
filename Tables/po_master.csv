@@ -1,0 +1,6 @@
+po_number,po_date,po_total_value,po_currency,invoicing_type
+1492092,2024-07-22,177779,USD,hourly_rate
+1535984,2025-06-11,131000,USD,mixed
+1492271,2025-05-23,266928,USD,hourly_rate
+1492230,2025-05-23,285057,USD,hourly_rate
+1508104,2025-10-01,360000,USD,hourly_rate

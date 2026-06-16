@@ -1,18 +1,15 @@
 from io import BytesIO
 import pandas as pd
 import streamlit as st
-from modules import fill_calculation_excel
+import modules
 
 
 EXCEL_MIME_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
+po_master, po_working_hours, po_daily_rates, po_hourly_rates = modules.get_po_data()
 
-PO_OPTIONS = [
-    "Select PO",
-    "PO 001",
-    "PO 002",
-    "PO 003",
-]
+PO_OPTIONS = list(po_master['po_number'].unique())
+
 
 ROLE_OPTIONS = [
     "Select role",
@@ -64,7 +61,7 @@ required_excel_inputs = {
 
 if all(value is not None for value in required_excel_inputs.values()):
     if st.button("Generate calculation Excel"):
-        excel_file = fill_calculation_excel(
+        excel_file = modules.fill_calculation_excel(
             required_excel_inputs["ts_details"],
             required_excel_inputs["po_hourly_rates"],
             required_excel_inputs["po_working_hours"],
