@@ -34,6 +34,9 @@ if timesheets:
     for timesheet in timesheets:
         st.write(timesheet.name)
 
+
+ts_details = modules.get_timesheets_data(timesheets)
+
 st.divider()
 st.subheader("Calculation Excel")
 

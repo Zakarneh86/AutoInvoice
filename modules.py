@@ -182,9 +182,12 @@ def get_po_data(po_w_pl, po_wo_pl, pl, haspl):
 #   Timesheet Reader Functions   #
 ##################################
 ## Timesheet Conversion to base64
-def file_to_base64(file, dpi=300):
-  if file.endswith('.pdf'):
-    doc = pymupdf.open(file)
+def file_to_base64(uploaded_file, dpi=300):
+  uploaded_file.seek(0)
+  file_bytes = uploaded_file.read()
+
+  if uploaded_file.name.lower().endswith('.pdf'):
+    doc = pymupdf.open(stream=file_bytes, filetype="pdf")
     zoom = dpi / 72
     matrix = pymupdf.Matrix(zoom, zoom)
     images = []
@@ -198,10 +201,8 @@ def file_to_base64(file, dpi=300):
         images.append(image_b64)
     doc.close()
   else:
-    with open(file, "rb") as image_file:
-      image_bytes = image_file.read()
-      image_b64 = base64.b64encode(image_bytes).decode("utf-8")
-      images = [image_b64]
+    image_b64 = base64.b64encode(image_bytes).decode("utf-8")
+    images = [image_b64]
   return images
 
 ## Timesheet Details Extraction using OpenAI
