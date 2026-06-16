@@ -6,7 +6,8 @@ import modules
 apiKeys = st.secrets["API_Keys"]
 openAiKey = apiKeys["openAI"]
 
-client = modules.client(openAiKey)
+client, error, status_text = modules.client(openAiKey)
+st.write(status_text)
 
 
 st.title("Auto Invoice")

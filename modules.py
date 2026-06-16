@@ -22,13 +22,13 @@ def client (APIkey):
     try:
         client = OpenAI(APIkey = APIkey)
         error = False
-        error_text = "Client initialized successfully."
-        return client, error, error_text
+        status_text = "Client initialized successfully."
+        return client, error, status_text
     except Exception as e:
         client = None
         error = True
-        error_text = f"Failed to initialize OpenAI client: {e}"
-        return client, error, error_text
+        status_text = f"Failed to initialize OpenAI client: {e}"
+        return client, error, status_text
 
 ## Loading PO Json Schema
 with open("po_schema.json", "r") as f:
