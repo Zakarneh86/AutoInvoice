@@ -461,8 +461,8 @@ def fill_calculation_excel(
 ##################################
 ## Reading PO Database
 def get_orders_data():
-    po_master = pd.read_csv('Tables\po_master.csv')
-    po_working_hours = pd.read_csv('Tables\po_working_hours.csv')
-    po_daily_rates = pd.read_csv('Tables\po_daily_rates.csv')
-    po_hourly_rates = pd.read_csv('Tables\po_hourly_rates.csv')
+    po_master = pd.read_csv('Tables/po_master.csv')
+    po_working_hours = pd.read_csv('Tables/po_working_hours.csv')
+    po_daily_rates = pd.read_csv('Tables/po_daily_rates.csv')
+    po_hourly_rates = pd.read_csv('Tables/po_hourly_rates.csv')
     return po_master, po_working_hours, po_daily_rates, po_hourly_rates
