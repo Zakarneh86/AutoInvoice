@@ -47,6 +47,12 @@ ts_details = modules.get_timesheets_data(timesheets, client)
 st.divider()
 st.subheader("Calculation Excel")
 
+st.session_state['ts_details']=ts_details
+st.session_state['po_hourly_rates'] = po_hourly_rates
+st.session_state['po_working_hours'] = po_working_hours
+
+
+
 required_excel_inputs = {
     "ts_details": st.session_state.get("ts_details"),
     "po_hourly_rates": st.session_state.get("po_hourly_rates"),
