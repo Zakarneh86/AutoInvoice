@@ -212,20 +212,30 @@ with invoice_tab:
 
     with left_panel:
         st.markdown('<div class="section-label">Invoice setup</div>', unsafe_allow_html=True)
-        po = st.selectbox("PO", po_options)
+        po = st.selectbox("PO", ["Select PO"] + po_options)
 
-        location_options = list(
-            po_hourly_rates["onshore_or_offshore"][po_hourly_rates["po_number"] == po].unique()
-        )
-        location = st.selectbox("Location", location_options)
+        if po != "Select PO":
+            location_options = list(
+                po_hourly_rates["onshore_or_offshore"][
+                    po_hourly_rates["po_number"] == po
+                ].unique()
+            )
+        else:
+            location_options = []
 
-        role_options = list(
-            po_hourly_rates["role_name"][
-                (po_hourly_rates["po_number"] == po)
-                & (po_hourly_rates["onshore_or_offshore"] == location)
-            ].unique()
-        )
-        role = st.selectbox("Role", role_options)
+        location = st.selectbox("Location", ["Select Location"] + location_options)
+
+        if po != "Select PO" and location != "Select Location":
+            role_options = list(
+                po_hourly_rates["role_name"][
+                    (po_hourly_rates["po_number"] == po)
+                    & (po_hourly_rates["onshore_or_offshore"] == location)
+                ].unique()
+            )
+        else:
+            role_options = []
+
+        role = st.selectbox("Role", ["Select Role"] + role_options)
 
     with right_panel:
         st.markdown('<div class="section-label">Timesheets</div>', unsafe_allow_html=True)
@@ -244,7 +254,13 @@ with invoice_tab:
 
     st.divider()
 
-    can_generate = bool(po and role and location and timesheets and not error)
+    can_generate = bool(
+        po != "Select PO"
+        and location != "Select Location"
+        and role != "Select Role"
+        and timesheets
+        and not error
+    )
 
     generate_clicked = st.button(
         "Generate Calculation Sheet",
