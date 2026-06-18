@@ -130,9 +130,47 @@ Rules:
 ##################################
 #       PO Reader Functions      #
 ##################################
+def po_pdf_to_openai_content(uploaded_file, dpi=200):
+    uploaded_file.seek(0)
+    file_bytes = uploaded_file.read()
+
+    doc = pymupdf.open(stream=file_bytes, filetype="pdf")
+
+    text_parts = []
+    for page in doc:
+        text = page.get_text().strip()
+        if text:
+            text_parts.append(text)
+
+    doc_text = "\n".join(text_parts).strip()
+
+    if doc_text:
+        doc.close()
+        return [{"type": "input_text", "text": doc_text}]
+
+    images = []
+    zoom = dpi / 72
+    matrix = pymupdf.Matrix(zoom, zoom)
+
+    for page in doc:
+        pix = page.get_pixmap(matrix=matrix, alpha=False)
+        image_bytes = pix.tobytes("png")
+        image_b64 = base64.b64encode(image_bytes).decode("utf-8")
+        images.append({
+            "type": "input_image",
+            "image_url": f"data:image/png;base64,{image_b64}",
+        })
+
+    doc.close()
+    return images
+
+
 ## PO Details Extraction using OpenAI
-def generate_po_details(po_text: str):
-    response = client.responses.create(
+def generate_po_details(po_content, openai_client):
+    user_content = [{"type": "input_text", "text": "Customer PO details:"}]
+    user_content.extend(po_content)
+
+    response = openai_client.responses.create(
         model="gpt-5.5",
         input=[
             {
@@ -141,9 +179,7 @@ def generate_po_details(po_text: str):
             },
             {
                 "role": "user",
-                "content": f"""Customer PO details:
-                {po_text}
-                """
+                "content": user_content
             }
         ],
         text={
@@ -157,25 +193,19 @@ def generate_po_details(po_text: str):
     )
     return json.loads(response.output_text)
 
-## PO Text Extraction from PDF
-def get_po_data(po_w_pl, po_wo_pl, pl, haspl):
-  doc_text = ''
-  if haspl:
-    po = pymupdf.open(po_w_pl)
-    for page in po:
-      text = page.get_text()
-      doc_text = doc_text + ' '+text
-  else:
-    po = pymupdf.open(po_wo_pl)
-    pl = pymupdf.open(pl)
-    for page in po:
-      text = page.get_text()
-      doc_text = doc_text + ' '+text
-    for page in pl:
-      text = page.get_text()
-      doc_text = doc_text + ' '+text
+## PO Details Extraction from original or scanned PDF
+def get_po_data(po_w_pl, po_wo_pl, pl, haspl, openai_client):
+  po_content = []
 
-  po_json = generate_po_details(doc_text)
+  if haspl:
+    # Scenario 1: the PO PDF already includes the price list.
+    po_content.extend(po_pdf_to_openai_content(po_w_pl))
+  else:
+    # Scenario 2: the PO PDF and price-list PDF are uploaded separately.
+    po_content.extend(po_pdf_to_openai_content(po_wo_pl))
+    po_content.extend(po_pdf_to_openai_content(pl))
+
+  po_json = generate_po_details(po_content, openai_client)
   return po_json
 
 ##################################
