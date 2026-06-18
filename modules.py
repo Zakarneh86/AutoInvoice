@@ -130,44 +130,51 @@ Rules:
 ##################################
 #       PO Reader Functions      #
 ##################################
-def po_pdf_to_openai_content(uploaded_file, dpi=200):
+def has_useful_pdf_text(text, min_chars=80):
+    clean_text = "".join(char for char in text if char.isalnum())
+    return len(clean_text) >= min_chars
+
+
+def pdf_page_to_image_content(page, dpi):
+    zoom = dpi / 72
+    matrix = pymupdf.Matrix(zoom, zoom)
+    pix = page.get_pixmap(matrix=matrix, alpha=False)
+    image_bytes = pix.tobytes("png")
+    image_b64 = base64.b64encode(image_bytes).decode("utf-8")
+    return {
+        "type": "input_image",
+        "image_url": f"data:image/png;base64,{image_b64}",
+    }
+
+
+def po_pdf_to_openai_content(uploaded_file, dpi=220):
     uploaded_file.seek(0)
     file_bytes = uploaded_file.read()
 
     doc = pymupdf.open(stream=file_bytes, filetype="pdf")
 
-    text_parts = []
-    for page in doc:
+    content = []
+
+    for page_number, page in enumerate(doc, start=1):
         text = page.get_text().strip()
-        if text:
-            text_parts.append(text)
-
-    doc_text = "\n".join(text_parts).strip()
-
-    if doc_text:
-        doc.close()
-        return [{"type": "input_text", "text": doc_text}]
-
-    images = []
-    zoom = dpi / 72
-    matrix = pymupdf.Matrix(zoom, zoom)
-
-    for page in doc:
-        pix = page.get_pixmap(matrix=matrix, alpha=False)
-        image_bytes = pix.tobytes("png")
-        image_b64 = base64.b64encode(image_bytes).decode("utf-8")
-        images.append({
-            "type": "input_image",
-            "image_url": f"data:image/png;base64,{image_b64}",
-        })
+        if has_useful_pdf_text(text):
+            content.append({
+                "type": "input_text",
+                "text": f"Page {page_number} text:\n{text}",
+            })
+        else:
+            content.append(pdf_page_to_image_content(page, dpi))
 
     doc.close()
-    return images
+    return content
 
 
 ## PO Details Extraction using OpenAI
 def generate_po_details(po_content, openai_client):
-    user_content = [{"type": "input_text", "text": "Customer PO details:"}]
+    user_content = [{
+        "type": "input_text",
+        "text": "Customer PO details. Some pages may be scanned images. Extract all PO and rate information from the text and images provided.",
+    }]
     user_content.extend(po_content)
 
     response = openai_client.responses.create(
