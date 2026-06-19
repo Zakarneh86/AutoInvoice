@@ -214,10 +214,39 @@ with invoice_tab:
         st.markdown('<div class="section-label">Invoice setup</div>', unsafe_allow_html=True)
         po = st.selectbox("PO", ["Select PO"] + po_options)
 
+        invoicing_type_options = ["Select Invoicing Type", "Daily", "Hourly", "Mixed"]
+        if po != "Select PO":
+            po_invoicing_type = po_master["invoicing_type"][
+                po_master["po_number"] == po
+            ].iloc[0]
+            if po_invoicing_type == "daily":
+                default_invoicing_type = "Daily"
+            elif po_invoicing_type == "mixed":
+                default_invoicing_type = "Mixed"
+            else:
+                default_invoicing_type = "Hourly"
+            default_invoicing_index = invoicing_type_options.index(default_invoicing_type)
+        else:
+            default_invoicing_index = 0
+
+        invoicing_type_label = st.selectbox(
+            "Invoicing Type",
+            invoicing_type_options,
+            index=default_invoicing_index,
+        )
+
+        invoicing_type = {
+            "Daily": "daily",
+            "Hourly": "hourly_rate",
+            "Mixed": "mixed",
+        }.get(invoicing_type_label)
+
+        rate_table = po_daily_rates if invoicing_type == "daily" else po_hourly_rates
+
         if po != "Select PO":
             location_options = list(
-                po_hourly_rates["onshore_or_offshore"][
-                    po_hourly_rates["po_number"] == po
+                rate_table["onshore_or_offshore"][
+                    rate_table["po_number"] == po
                 ].unique()
             )
         else:
@@ -227,9 +256,9 @@ with invoice_tab:
 
         if po != "Select PO" and location != "Select Location":
             role_options = list(
-                po_hourly_rates["role_name"][
-                    (po_hourly_rates["po_number"] == po)
-                    & (po_hourly_rates["onshore_or_offshore"] == location)
+                rate_table["role_name"][
+                    (rate_table["po_number"] == po)
+                    & (rate_table["onshore_or_offshore"] == location)
                 ].unique()
             )
         else:
@@ -256,6 +285,7 @@ with invoice_tab:
 
     can_generate = bool(
         po != "Select PO"
+        and invoicing_type_label != "Select Invoicing Type"
         and location != "Select Location"
         and role != "Select Role"
         and timesheets
@@ -283,11 +313,13 @@ with invoice_tab:
             st.write("Applying PO rates and working hours.")
             excel_file = modules.fill_calculation_excel(
                 ts_details,
+                po_daily_rates,
                 po_hourly_rates,
                 po_working_hours,
                 role,
                 location,
                 po,
+                invoicing_type,
             )
             st.session_state["calculation_excel"] = excel_file.getvalue()
             status.update(label="Calculation sheet generated.", state="complete")

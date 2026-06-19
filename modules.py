@@ -314,6 +314,12 @@ def to_num(value):
     if isinstance(value, (int, float)):
         return value
     value = str(value).strip()
+    lowered_value = value.lower().replace(" ", "")
+    if lowered_value.endswith(("am", "pm")):
+        parsed_time = parser.parse(value)
+        hour = parsed_time.hour
+        minute = parsed_time.minute
+        return hour + (minute / 60)
     if ":" in value:
         return int(value.split(":")[0])
     return float(value)
@@ -402,24 +408,150 @@ def classify_entry(entry, minimum_normal_hours):
         "sat": saturday_hours
     }
 
+
+def classify_daily_entry(entry):
+    hours_on_site = to_num(entry.get("hours_on_site"))
+    travel_hours = to_num(entry.get("travel_hours"))
+    from_time = to_num(entry.get("from_time"))
+    to_time = to_num(entry.get("to_time"))
+    friday_hours = to_num(entry.get("friday_hours"))
+    saturday_hours = to_num(entry.get("saturday_hours"))
+
+    has_site_entry = any([
+        hours_on_site > 0,
+        from_time > 0,
+        to_time > 0,
+        friday_hours > 0,
+        saturday_hours > 0,
+        travel_hours > 0,
+    ])
+
+    if not has_site_entry:
+        return None
+
+    return {
+        "day_name": entry["day_name"],
+        "date": clean_date(entry["date"]),
+        "normal": 1,
+        "ot": 0,
+        "fri": 0,
+        "sat": 0
+    }
+
+
+def classify_mixed_entry(entry, minimum_normal_hours):
+    day_name = entry["day_name"]
+
+    hours_on_site = to_num(entry.get("hours_on_site"))
+    travel_hours = to_num(entry.get("travel_hours"))
+    from_time = to_num(entry.get("from_time"))
+    to_time = to_num(entry.get("to_time"))
+    friday_hours = to_num(entry.get("friday_hours"))
+    saturday_hours = to_num(entry.get("saturday_hours"))
+
+    if hours_on_site > 0:
+        total_hours = hours_on_site + travel_hours
+    else:
+        total_hours = duration_hours(
+            entry.get("from_time"),
+            entry.get("to_time")
+        ) + travel_hours
+
+    if day_name == "FRI":
+        total_hours = friday_hours or total_hours
+    elif day_name == "SAT":
+        total_hours = saturday_hours or total_hours
+
+    if total_hours <= 0:
+        return None
+
+    extra_hours = max(total_hours - minimum_normal_hours, 0)
+
+    return {
+        "day_name": day_name,
+        "date": clean_date(entry["date"]),
+        "normal": 1,
+        "ot": extra_hours if day_name in ["SUN", "MON", "TUE", "WED", "THUR"] else 0,
+        "fri": extra_hours if day_name == "FRI" else 0,
+        "sat": extra_hours if day_name == "SAT" else 0
+    }
+
+
+def classify_entry_by_invoicing_type(entry, minimum_normal_hours, invoicing_type):
+    if invoicing_type == "daily":
+        return classify_daily_entry(entry)
+    if invoicing_type == "mixed":
+        return classify_mixed_entry(entry, minimum_normal_hours)
+    return classify_entry(entry, minimum_normal_hours)
+
+
+def clean_rate(value):
+    if pd.isna(value):
+        return 0
+    return value
+
+
+def find_rate_row(rate_table, po, role, location):
+    exact_match = rate_table[
+        (rate_table["po_number"] == po)
+        & (rate_table["role_name"] == role)
+        & (rate_table["onshore_or_offshore"] == location)
+    ]
+
+    if not exact_match.empty:
+        return exact_match.iloc[0]
+
+    role_text = str(role).lower()
+    fuzzy_match = rate_table[
+        (rate_table["po_number"] == po)
+        & (rate_table["onshore_or_offshore"] == location)
+        & (
+            rate_table["role_name"].astype(str).str.lower().str.contains(role_text, regex=False)
+            | rate_table["role_name"].astype(str).apply(
+                lambda value: str(value).lower() in role_text
+            )
+        )
+    ]
+
+    if not fuzzy_match.empty:
+        return fuzzy_match.iloc[0]
+
+    raise IndexError("No matching rate row found.")
+
 # Calculation Excel Sheet Generator (This Needs to be Modified)
 def fill_calculation_excel(
     ts_details,
+    po_daily_rates,
     po_hourly_rates,
     po_working_hours,
     role,
     location,
-    po
+    po,
+    invoicing_type="hourly_rate"
 ):
     template_path = "Calculation.xlsx"
 
-    rate_row = po_hourly_rates[(po_hourly_rates["po_number"] == po) & (po_hourly_rates["role_name"] == role) & (po_hourly_rates["onshore_or_offshore"] == location)].iloc[0]
-    hours_row = po_working_hours[(po_working_hours["po_number"] == po) & (po_working_hours["onshore_or_offshore"] == location)].iloc[0]
+    if invoicing_type == "daily":
+        rate_row = find_rate_row(po_daily_rates, po, role, location)
+        normal_rate = clean_rate(rate_row["normal_week_day"])
+        ot_rate = 0
+        friday_rate = 0
+        saturday_rate = 0
+    elif invoicing_type == "mixed":
+        daily_rate_row = find_rate_row(po_daily_rates, po, role, location)
+        hourly_rate_row = find_rate_row(po_hourly_rates, po, role, location)
+        normal_rate = clean_rate(daily_rate_row["normal_week_day"])
+        ot_rate = clean_rate(hourly_rate_row["overtime_week_day"])
+        friday_rate = clean_rate(hourly_rate_row["friday"])
+        saturday_rate = clean_rate(hourly_rate_row["saturday"])
+    else:
+        rate_row = find_rate_row(po_hourly_rates, po, role, location)
+        normal_rate = clean_rate(rate_row["normal_week_day"])
+        ot_rate = clean_rate(rate_row["overtime_week_day"])
+        friday_rate = clean_rate(rate_row["friday"])
+        saturday_rate = clean_rate(rate_row["saturday"])
 
-    normal_rate = rate_row["normal_week_day"]
-    ot_rate = rate_row["overtime_week_day"]
-    friday_rate = rate_row["friday"]
-    saturday_rate = rate_row["saturday"]
+    hours_row = po_working_hours[(po_working_hours["po_number"] == po) & (po_working_hours["onshore_or_offshore"] == location)].iloc[0]
 
     minimum_normal_hours = hours_row["normal_week_day"]
 
@@ -437,7 +569,11 @@ def fill_calculation_excel(
 
         for ts_name, entries in engineer_timesheets.items():
             for entry in entries:
-                classified = classify_entry(entry, minimum_normal_hours)
+                classified = classify_entry_by_invoicing_type(
+                    entry,
+                    minimum_normal_hours,
+                    invoicing_type
+                )
                 if classified is None:
                     continue
                 date = classified["date"]
