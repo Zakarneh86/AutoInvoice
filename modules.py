@@ -48,6 +48,7 @@ Rules:
 2. Do not invent, estimate, infer, or assume missing values.
 3. If a value is not explicitly provided and cannot be derived from an explicit PO formula, return null.
 4. If information is not found in the PO, return null.
+5. The weekend is Friday and Saturday.
 
 Working Hours:
 5. Extract working-hour information exactly as stated.
