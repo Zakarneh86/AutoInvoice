@@ -22,6 +22,10 @@ def has_supabase_config(secrets):
     )
 
 
+def csv_files_exist():
+    return all((TABLES_DIR / file_name).exists() for file_name in TABLE_FILES.values())
+
+
 @lru_cache(maxsize=1)
 def get_supabase_client(url, key):
     return create_client(url, key)
@@ -30,6 +34,40 @@ def get_supabase_client(url, key):
 def get_database_client(secrets):
     supabase_config = secrets["Supabase"]
     return get_supabase_client(supabase_config["url"], supabase_config["key"])
+
+
+def can_connect_supabase(secrets):
+    if not has_supabase_config(secrets):
+        return False
+
+    try:
+        client = get_database_client(secrets)
+        client.table("po_master").select("po_number").limit(1).execute()
+        return True
+    except Exception:
+        return False
+
+
+def get_database_status(secrets):
+    if has_supabase_config(secrets) and can_connect_supabase(secrets):
+        return {
+            "mode": "Supabase",
+            "status": "Connected",
+            "use_supabase": True,
+        }
+
+    if csv_files_exist():
+        return {
+            "mode": "CSV",
+            "status": "Connected",
+            "use_supabase": False,
+        }
+
+    return {
+        "mode": "CSV",
+        "status": "Not Connected",
+        "use_supabase": False,
+    }
 
 
 def read_csv_table(table_name):
@@ -64,25 +102,31 @@ def write_supabase_table(table_name, df, secrets):
         client.table(table_name).insert(records).execute()
 
 
-def read_table(table_name, secrets=None):
-    if secrets is not None and has_supabase_config(secrets):
+def read_table(table_name, secrets=None, use_supabase=None):
+    if use_supabase is None:
+        use_supabase = secrets is not None and has_supabase_config(secrets)
+
+    if secrets is not None and use_supabase:
         return read_supabase_table(table_name, secrets)
     return read_csv_table(table_name)
 
 
-def write_table(table_name, df, secrets=None):
-    if secrets is not None and has_supabase_config(secrets):
+def write_table(table_name, df, secrets=None, use_supabase=None):
+    if use_supabase is None:
+        use_supabase = secrets is not None and has_supabase_config(secrets)
+
+    if secrets is not None and use_supabase:
         write_supabase_table(table_name, df, secrets)
     else:
         write_csv_table(table_name, df)
 
 
-def get_orders_data(secrets=None):
+def get_orders_data(secrets=None, use_supabase=None):
     return (
-        read_table("po_master", secrets),
-        read_table("po_working_hours", secrets),
-        read_table("po_daily_rates", secrets),
-        read_table("po_hourly_rates", secrets),
+        read_table("po_master", secrets, use_supabase),
+        read_table("po_working_hours", secrets, use_supabase),
+        read_table("po_daily_rates", secrets, use_supabase),
+        read_table("po_hourly_rates", secrets, use_supabase),
     )
 
 
@@ -94,8 +138,11 @@ def align_to_columns(df, columns):
     return aligned[columns]
 
 
-def upsert_by_po_number(table_name, new_rows, secrets=None):
-    existing_rows = read_table(table_name, secrets)
+def upsert_by_po_number(table_name, new_rows, secrets=None, use_supabase=None):
+    if use_supabase is None:
+        use_supabase = secrets is not None and has_supabase_config(secrets)
+
+    existing_rows = read_table(table_name, secrets, use_supabase)
     new_rows = align_to_columns(new_rows, existing_rows.columns)
 
     if new_rows.empty:
@@ -103,7 +150,7 @@ def upsert_by_po_number(table_name, new_rows, secrets=None):
 
     po_numbers = set(new_rows["po_number"].astype(str))
 
-    if secrets is not None and has_supabase_config(secrets):
+    if secrets is not None and use_supabase:
         client = get_database_client(secrets)
         delete_values = new_rows["po_number"].dropna().unique().tolist()
         if delete_values:
@@ -119,7 +166,7 @@ def upsert_by_po_number(table_name, new_rows, secrets=None):
     ]
 
     updated_rows = pd.concat([existing_rows, new_rows], ignore_index=True)
-    write_table(table_name, updated_rows, secrets)
+    write_table(table_name, updated_rows, secrets, use_supabase)
 
 
 def save_po_tables(
@@ -128,8 +175,9 @@ def save_po_tables(
     hourly_rates_df,
     working_hours_df,
     secrets=None,
+    use_supabase=None,
 ):
-    upsert_by_po_number("po_master", po_master_df, secrets)
-    upsert_by_po_number("po_daily_rates", daily_rates_df, secrets)
-    upsert_by_po_number("po_hourly_rates", hourly_rates_df, secrets)
-    upsert_by_po_number("po_working_hours", working_hours_df, secrets)
+    upsert_by_po_number("po_master", po_master_df, secrets, use_supabase)
+    upsert_by_po_number("po_daily_rates", daily_rates_df, secrets, use_supabase)
+    upsert_by_po_number("po_hourly_rates", hourly_rates_df, secrets, use_supabase)
+    upsert_by_po_number("po_working_hours", working_hours_df, secrets, use_supabase)

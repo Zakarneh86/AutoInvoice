@@ -166,11 +166,14 @@ if error:
 else:
     st.caption(status_text)
 
-database_mode = "Supabase" if database.has_supabase_config(st.secrets) else "CSV"
-st.caption(f"Database: {database_mode}")
+database_status = database.get_database_status(st.secrets)
+st.caption(
+    f"Database Mode: {database_status['mode']} | Status: {database_status['status']}"
+)
 
 po_master, po_working_hours, po_daily_rates, po_hourly_rates = database.get_orders_data(
-    st.secrets
+    st.secrets,
+    database_status["use_supabase"],
 )
 
 invoice_tab, add_po_tab = st.tabs(["Generate Invoice", "Add New PO"])
@@ -406,5 +409,6 @@ with add_po_tab:
                 edited_hourly_rates,
                 edited_working_hours,
                 st.secrets,
+                database_status["use_supabase"],
             )
             st.success("PO database updated.")
