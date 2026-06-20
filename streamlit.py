@@ -1,14 +1,13 @@
 from io import BytesIO
-from pathlib import Path
 
 import pandas as pd
 import streamlit as st
 
+import database
 import modules
 
 
 EXCEL_MIME_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-TABLES_DIR = Path("Tables")
 
 
 st.set_page_config(
@@ -147,37 +146,6 @@ def build_po_table_frames(po_json):
     return po_master_df, daily_rates_df, hourly_rates_df, working_hours_df
 
 
-def align_to_columns(df, columns):
-    aligned = df.copy()
-    for column in columns:
-        if column not in aligned.columns:
-            aligned[column] = None
-    return aligned[columns]
-
-
-def upsert_by_po_number(table_path, new_rows):
-    existing_rows = pd.read_csv(table_path)
-    new_rows = align_to_columns(new_rows, existing_rows.columns)
-
-    if new_rows.empty:
-        return
-
-    po_numbers = set(new_rows["po_number"].astype(str))
-    existing_rows = existing_rows[
-        ~existing_rows["po_number"].astype(str).isin(po_numbers)
-    ]
-
-    updated_rows = pd.concat([existing_rows, new_rows], ignore_index=True)
-    updated_rows.to_csv(table_path, index=False)
-
-
-def save_po_tables(po_master_df, daily_rates_df, hourly_rates_df, working_hours_df):
-    upsert_by_po_number(TABLES_DIR / "po_master.csv", po_master_df)
-    upsert_by_po_number(TABLES_DIR / "po_daily_rates.csv", daily_rates_df)
-    upsert_by_po_number(TABLES_DIR / "po_hourly_rates.csv", hourly_rates_df)
-    upsert_by_po_number(TABLES_DIR / "po_working_hours.csv", working_hours_df)
-
-
 st.markdown(
     """
     <div class="hero">
@@ -198,7 +166,12 @@ if error:
 else:
     st.caption(status_text)
 
-po_master, po_working_hours, po_daily_rates, po_hourly_rates = modules.get_orders_data()
+database_mode = "Supabase" if database.has_supabase_config(st.secrets) else "CSV"
+st.caption(f"Database: {database_mode}")
+
+po_master, po_working_hours, po_daily_rates, po_hourly_rates = database.get_orders_data(
+    st.secrets
+)
 
 invoice_tab, add_po_tab = st.tabs(["Generate Invoice", "Add New PO"])
 
@@ -427,10 +400,11 @@ with add_po_tab:
         )
 
         if st.button("Submit PO to database", type="primary", use_container_width=True):
-            save_po_tables(
+            database.save_po_tables(
                 edited_po_master,
                 edited_daily_rates,
                 edited_hourly_rates,
                 edited_working_hours,
+                st.secrets,
             )
             st.success("PO database updated.")
