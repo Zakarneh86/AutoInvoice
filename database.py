@@ -12,6 +12,7 @@ TABLE_FILES = {
     "po_hourly_rates": "po_hourly_rates.csv",
     "po_working_hours": "po_working_hours.csv",
 }
+SUPABASE_GENERATED_COLUMNS = ["id"]
 
 
 def has_supabase_config(secrets):
@@ -93,11 +94,19 @@ def clean_records(df):
     return clean_df.to_dict(orient="records")
 
 
+def prepare_supabase_insert_rows(df):
+    insert_df = df.drop(
+        columns=[column for column in SUPABASE_GENERATED_COLUMNS if column in df.columns],
+        errors="ignore",
+    )
+    return clean_records(insert_df)
+
+
 def write_supabase_table(table_name, df, secrets):
     client = get_database_client(secrets)
     client.table(table_name).delete().neq("po_number", "__never_match__").execute()
 
-    records = clean_records(df)
+    records = prepare_supabase_insert_rows(df)
     if records:
         client.table(table_name).insert(records).execute()
 
@@ -156,7 +165,7 @@ def upsert_by_po_number(table_name, new_rows, secrets=None, use_supabase=None):
         if delete_values:
             client.table(table_name).delete().in_("po_number", delete_values).execute()
 
-        records = clean_records(new_rows)
+        records = prepare_supabase_insert_rows(new_rows)
         if records:
             client.table(table_name).insert(records).execute()
         return
