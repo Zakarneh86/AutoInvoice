@@ -163,128 +163,177 @@ def pdf_page_to_image_content(page, dpi):
 
 
 def po_pdf_to_openai_content(uploaded_file, dpi=220):
-    uploaded_file.seek(0)
-    file_bytes = uploaded_file.read()
+    doc = None
+    try:
+        uploaded_file.seek(0)
+        file_bytes = uploaded_file.read()
 
-    doc = pymupdf.open(stream=file_bytes, filetype="pdf")
+        if not file_bytes:
+            raise ValueError("The uploaded PDF is empty.")
 
-    content = []
+        doc = pymupdf.open(stream=file_bytes, filetype="pdf")
+        content = []
 
-    for page_number, page in enumerate(doc, start=1):
-        text = page.get_text().strip()
-        if has_useful_pdf_text(text):
-            content.append({
-                "type": "input_text",
-                "text": f"Page {page_number} text:\n{text}",
-            })
-        else:
-            content.append(pdf_page_to_image_content(page, dpi))
+        for page_number, page in enumerate(doc, start=1):
+            text = page.get_text().strip()
+            if has_useful_pdf_text(text):
+                content.append({
+                    "type": "input_text",
+                    "text": f"Page {page_number} text:\n{text}",
+                })
+            else:
+                content.append(pdf_page_to_image_content(page, dpi))
 
-    doc.close()
-    return content
+        if not content:
+            raise ValueError("No readable pages were found in the PDF.")
+
+        return content
+    except Exception as exc:
+        file_name = getattr(uploaded_file, "name", "uploaded PDF")
+        raise RuntimeError(f"Failed to read PO PDF '{file_name}': {exc}") from exc
+    finally:
+        if doc is not None:
+            doc.close()
 
 
 ## PO Details Extraction using OpenAI
 def generate_po_details(po_content, openai_client):
+    if not po_content:
+        raise ValueError("No PO content was provided for extraction.")
+
     user_content = [{
         "type": "input_text",
         "text": "Customer PO details. Some pages may be scanned images. Extract all PO and rate information from the text and images provided.",
     }]
     user_content.extend(po_content)
 
-    response = openai_client.responses.create(
-        model="gpt-5.5",
-        input=[
-            {
-                "role": "system",
-                "content": PO_SYSTEM_PROMPT
-            },
-            {
-                "role": "user",
-                "content": user_content
+    try:
+        response = openai_client.responses.create(
+            model="gpt-5.5",
+            input=[
+                {
+                    "role": "system",
+                    "content": PO_SYSTEM_PROMPT
+                },
+                {
+                    "role": "user",
+                    "content": user_content
+                }
+            ],
+            text={
+                "format": {
+                    "type": "json_schema",
+                    "name": po_schema["name"],
+                    "schema": po_schema["schema"],
+                    "strict": True
+                }
             }
-        ],
-        text={
-            "format": {
-                "type": "json_schema",
-                "name": po_schema["name"],
-                "schema": po_schema["schema"],
-                "strict": True
-            }
-        }
-    )
-    return json.loads(response.output_text)
+        )
+        return json.loads(response.output_text)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError("PO extraction returned invalid JSON.") from exc
+    except Exception as exc:
+        raise RuntimeError(f"PO extraction failed: {exc}") from exc
 
 ## PO Details Extraction from original or scanned PDF
 def get_po_data(po_w_pl, po_wo_pl, pl, haspl, openai_client):
   po_content = []
 
-  if haspl:
-    # Scenario 1: the PO PDF already includes the price list.
-    po_content.extend(po_pdf_to_openai_content(po_w_pl))
-  else:
-    # Scenario 2: the PO PDF and price-list PDF are uploaded separately.
-    po_content.extend(po_pdf_to_openai_content(po_wo_pl))
-    po_content.extend(po_pdf_to_openai_content(pl))
+  try:
+    if haspl:
+      if po_w_pl is None:
+        raise ValueError("PO file is required.")
+      # Scenario 1: the PO PDF already includes the price list.
+      po_content.extend(po_pdf_to_openai_content(po_w_pl))
+    else:
+      if po_wo_pl is None or pl is None:
+        raise ValueError("Both the PO file and price-list file are required.")
+      # Scenario 2: the PO PDF and price-list PDF are uploaded separately.
+      po_content.extend(po_pdf_to_openai_content(po_wo_pl))
+      po_content.extend(po_pdf_to_openai_content(pl))
 
-  po_json = generate_po_details(po_content, openai_client)
-  return po_json
+    po_json = generate_po_details(po_content, openai_client)
+    return po_json
+  except Exception as exc:
+    raise RuntimeError(f"Could not extract PO data: {exc}") from exc
 
 ##################################
 #   Timesheet Reader Functions   #
 ##################################
 ## Timesheet Conversion to base64
 def file_to_base64(uploaded_file, dpi=300):
-  uploaded_file.seek(0)
-  file_bytes = uploaded_file.read()
+  doc = None
+  try:
+    uploaded_file.seek(0)
+    file_bytes = uploaded_file.read()
 
-  if uploaded_file.name.lower().endswith('.pdf'):
-    doc = pymupdf.open(stream=file_bytes, filetype="pdf")
-    zoom = dpi / 72
-    matrix = pymupdf.Matrix(zoom, zoom)
-    images = []
+    if not file_bytes:
+      raise ValueError("The uploaded file is empty.")
 
-    for page in doc:
-        pix = page.get_pixmap(
-            matrix=matrix,
-            alpha=False)
-        image_bytes = pix.tobytes("png")
-        image_b64 = base64.b64encode(image_bytes).decode("utf-8")
-        images.append(image_b64)
-    doc.close()
-  else:
-    image_b64 = base64.b64encode(image_bytes).decode("utf-8")
-    images = [image_b64]
-  return images
+    if uploaded_file.name.lower().endswith('.pdf'):
+      doc = pymupdf.open(stream=file_bytes, filetype="pdf")
+      zoom = dpi / 72
+      matrix = pymupdf.Matrix(zoom, zoom)
+      images = []
+
+      for page in doc:
+          pix = page.get_pixmap(
+              matrix=matrix,
+              alpha=False)
+          image_bytes = pix.tobytes("png")
+          image_b64 = base64.b64encode(image_bytes).decode("utf-8")
+          images.append(image_b64)
+    else:
+      image_b64 = base64.b64encode(file_bytes).decode("utf-8")
+      images = [image_b64]
+
+    if not images:
+      raise ValueError("No pages or images were found in the uploaded file.")
+
+    return images
+  except Exception as exc:
+    file_name = getattr(uploaded_file, "name", "uploaded file")
+    raise RuntimeError(f"Failed to convert timesheet '{file_name}': {exc}") from exc
+  finally:
+    if doc is not None:
+      doc.close()
 
 ## Timesheet Details Extraction using OpenAI
 def generate_ts_details(timesheet, client):
+  if not timesheet:
+    raise ValueError("No timesheet images were provided for extraction.")
+
   user_content = [{"type": "input_text", "text": "Extract the timesheet data."}]
   for image in timesheet:
     user_content.append({"type": "input_image", "image_url": f"data:image/png;base64,{image}"})
 
-  response = client.responses.create(
-      model="gpt-5.5",
-      input=[
-          {
-              "role": "system",
-              "content": TIMESHEET_SYSTEM_PROMPT
-          },
-          {
-              "role": "user",
-              "content": user_content
-          }],
-      text={
-          "format": {
-              "type": "json_schema",
-              "name": timesheet_schema["name"],
-              "schema": timesheet_schema["schema"],
-              "strict": True
-          }
-      }
-  )
+  try:
+    response = client.responses.create(
+        model="gpt-5.5",
+        input=[
+            {
+                "role": "system",
+                "content": TIMESHEET_SYSTEM_PROMPT
+            },
+            {
+                "role": "user",
+                "content": user_content
+            }],
+        text={
+            "format": {
+                "type": "json_schema",
+                "name": timesheet_schema["name"],
+                "schema": timesheet_schema["schema"],
+                "strict": True
+            }
+        }
+    )
 
-  return json.loads(response.output_text)
+    return json.loads(response.output_text)
+  except json.JSONDecodeError as exc:
+    raise RuntimeError("Timesheet extraction returned invalid JSON.") from exc
+  except Exception as exc:
+    raise RuntimeError(f"Timesheet extraction failed: {exc}") from exc
 
 def normalize_day_name(day_name, date_text=None):
     day_map = {
@@ -321,10 +370,20 @@ def normalize_day_name(day_name, date_text=None):
     return None
 
 def normalize_timesheet_records(ts_json):
+    if not isinstance(ts_json, dict):
+        raise ValueError("Timesheet extraction result is not a valid object.")
+
     records = ts_json.get("records", ts_json.get("entries", []))
+    if records is None:
+        records = []
+    if not isinstance(records, list):
+        raise ValueError("Timesheet records must be a list.")
+
     entries = []
 
     for record in records:
+        if not isinstance(record, dict):
+            continue
         date_text = record.get("date")
         day_name = normalize_day_name(record.get("day_name"), date_text)
         entries.append({
@@ -350,8 +409,11 @@ def get_timesheets_data(uploaded_files, client):
 
     for uploaded_file in uploaded_files:
         print(uploaded_file.name)
-        timesheet = file_to_base64(uploaded_file)
-        ts_json = generate_ts_details(timesheet, client)
+        try:
+            timesheet = file_to_base64(uploaded_file)
+            ts_json = generate_ts_details(timesheet, client)
+        except Exception as exc:
+            raise RuntimeError(f"Could not process timesheet '{uploaded_file.name}': {exc}") from exc
 
         pro_info = {
             "project_name": ts_json["client"],
@@ -388,6 +450,8 @@ def to_num(value):
     if isinstance(value, (int, float)):
         return value
     value = str(value).strip()
+    if value.lower() in ["", "null", "none", "n/a", "na", "-", "--"]:
+        return 0
     lowered_value = value.lower().replace(" ", "")
     if lowered_value.endswith(("am", "pm")):
         parsed_time = parser.parse(value)
@@ -395,8 +459,12 @@ def to_num(value):
         minute = parsed_time.minute
         return hour + (minute / 60)
     if ":" in value:
-        return int(value.split(":")[0])
-    return float(value)
+        hour, minute = value.split(":", 1)
+        return int(hour) + (int(minute[:2]) / 60)
+    try:
+        return float(value)
+    except ValueError:
+        return 0
 
 def duration_hours(from_time, to_time):
     if not from_time or not to_time:
@@ -415,7 +483,12 @@ def clean_date(date_text):
 
 ## Time Classification Dunction
 def classify_entry(entry, minimum_normal_hours):
+    if not entry.get("date"):
+        return None
+
     day_name = normalize_day_name(entry.get("day_name"), entry.get("date"))
+    if not day_name:
+        return None
 
     hours_on_site = to_num(entry.get("hours_on_site"))
     travel_hours = to_num(entry.get("travel_hours"))
@@ -486,7 +559,12 @@ def classify_entry(entry, minimum_normal_hours):
 
 
 def classify_daily_entry(entry):
+    if not entry.get("date"):
+        return None
+
     day_name = normalize_day_name(entry.get("day_name"), entry.get("date"))
+    if not day_name:
+        return None
     hours_on_site = to_num(entry.get("hours_on_site"))
     travel_hours = to_num(entry.get("travel_hours"))
     from_time = to_num(entry.get("from_time"))
@@ -517,7 +595,12 @@ def classify_daily_entry(entry):
 
 
 def classify_mixed_entry(entry, minimum_normal_hours):
+    if not entry.get("date"):
+        return None
+
     day_name = normalize_day_name(entry.get("day_name"), entry.get("date"))
+    if not day_name:
+        return None
 
     hours_on_site = to_num(entry.get("hours_on_site"))
     travel_hours = to_num(entry.get("travel_hours"))
@@ -593,7 +676,9 @@ def find_rate_row(rate_table, po, role, location):
     if not fuzzy_match.empty:
         return fuzzy_match.iloc[0]
 
-    raise IndexError("No matching rate row found.")
+    raise IndexError(
+        f"No matching rate row found for PO '{po}', role '{role}', location '{location}'."
+    )
 
 # Calculation Excel Sheet Generator (This Needs to be Modified)
 def fill_calculation_excel(
@@ -607,32 +692,48 @@ def fill_calculation_excel(
     invoicing_type="hourly_rate"
 ):
     template_path = "Calculation.xlsx"
+    if not Path(template_path).exists():
+        raise FileNotFoundError(f"Calculation template was not found: {template_path}")
 
-    if invoicing_type == "daily":
-        rate_row = find_rate_row(po_daily_rates, po, role, location)
-        normal_rate = clean_rate(rate_row["normal_week_day"])
-        ot_rate = 0
-        friday_rate = 0
-        saturday_rate = 0
-    elif invoicing_type == "mixed":
-        daily_rate_row = find_rate_row(po_daily_rates, po, role, location)
-        hourly_rate_row = find_rate_row(po_hourly_rates, po, role, location)
-        normal_rate = clean_rate(daily_rate_row["normal_week_day"])
-        ot_rate = clean_rate(hourly_rate_row["overtime_week_day"])
-        friday_rate = clean_rate(hourly_rate_row["friday"])
-        saturday_rate = clean_rate(hourly_rate_row["saturday"])
-    else:
-        rate_row = find_rate_row(po_hourly_rates, po, role, location)
-        normal_rate = clean_rate(rate_row["normal_week_day"])
-        ot_rate = clean_rate(rate_row["overtime_week_day"])
-        friday_rate = clean_rate(rate_row["friday"])
-        saturday_rate = clean_rate(rate_row["saturday"])
+    try:
+        if invoicing_type == "daily":
+            rate_row = find_rate_row(po_daily_rates, po, role, location)
+            normal_rate = clean_rate(rate_row["normal_week_day"])
+            ot_rate = 0
+            friday_rate = 0
+            saturday_rate = 0
+        elif invoicing_type == "mixed":
+            daily_rate_row = find_rate_row(po_daily_rates, po, role, location)
+            hourly_rate_row = find_rate_row(po_hourly_rates, po, role, location)
+            normal_rate = clean_rate(daily_rate_row["normal_week_day"])
+            ot_rate = clean_rate(hourly_rate_row["overtime_week_day"])
+            friday_rate = clean_rate(hourly_rate_row["friday"])
+            saturday_rate = clean_rate(hourly_rate_row["saturday"])
+        else:
+            rate_row = find_rate_row(po_hourly_rates, po, role, location)
+            normal_rate = clean_rate(rate_row["normal_week_day"])
+            ot_rate = clean_rate(rate_row["overtime_week_day"])
+            friday_rate = clean_rate(rate_row["friday"])
+            saturday_rate = clean_rate(rate_row["saturday"])
 
-    hours_row = po_working_hours[(po_working_hours["po_number"] == po) & (po_working_hours["onshore_or_offshore"] == location)].iloc[0]
+        matching_hours = po_working_hours[
+            (po_working_hours["po_number"] == po)
+            & (po_working_hours["onshore_or_offshore"] == location)
+        ]
+        if matching_hours.empty:
+            raise IndexError(
+                f"No working-hours row found for PO '{po}', location '{location}'."
+            )
+        hours_row = matching_hours.iloc[0]
+    except KeyError as exc:
+        raise KeyError(f"Missing required rate or working-hours column: {exc}") from exc
 
     minimum_normal_hours = hours_row["normal_week_day"]
 
-    wb = load_workbook(template_path)
+    try:
+        wb = load_workbook(template_path)
+    except Exception as exc:
+        raise RuntimeError(f"Failed to open calculation template: {exc}") from exc
     ws = wb.active
 
     ws["B2"] = ts_details["pro_info"]["project_name"]
@@ -646,11 +747,16 @@ def fill_calculation_excel(
 
         for ts_name, entries in engineer_timesheets.items():
             for entry in entries:
-                classified = classify_entry_by_invoicing_type(
-                    entry,
-                    minimum_normal_hours,
-                    invoicing_type
-                )
+                try:
+                    classified = classify_entry_by_invoicing_type(
+                        entry,
+                        minimum_normal_hours,
+                        invoicing_type
+                    )
+                except Exception as exc:
+                    raise RuntimeError(
+                        f"Failed to classify entry for engineer '{engineer_name}' in '{ts_name}': {exc}"
+                    ) from exc
                 if classified is None:
                     continue
                 date = classified["date"]
@@ -700,9 +806,12 @@ def fill_calculation_excel(
         ws[f'{block["cols"]["fri"]}38'] = friday_rate
         ws[f'{block["cols"]["sat"]}38'] = saturday_rate
 
-    excel_file = BytesIO()
-    wb.save(excel_file)
-    excel_file.seek(0)
+    try:
+        excel_file = BytesIO()
+        wb.save(excel_file)
+        excel_file.seek(0)
+    except Exception as exc:
+        raise RuntimeError(f"Failed to create calculation Excel file: {exc}") from exc
 
     return excel_file
 

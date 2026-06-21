@@ -10,6 +10,12 @@ import modules
 EXCEL_MIME_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
 
+def show_error(message, exc):
+    st.error(message)
+    with st.expander("Error details"):
+        st.exception(exc)
+
+
 st.set_page_config(
     page_title="Auto Invoice",
     page_icon=":page_facing_up:",
@@ -79,15 +85,24 @@ def process_timesheets(uploaded_files, openai_client):
                 state="running",
             )
 
-            timesheet = modules.file_to_base64(uploaded_file)
-            ts_json = modules.generate_ts_details(timesheet, openai_client)
+            try:
+                timesheet = modules.file_to_base64(uploaded_file)
+                ts_json = modules.generate_ts_details(timesheet, openai_client)
+                entries = modules.normalize_timesheet_records(ts_json)
+            except Exception as exc:
+                status.update(
+                    label=f"Failed while processing {uploaded_file.name}",
+                    state="error",
+                )
+                raise RuntimeError(
+                    f"Timesheet '{uploaded_file.name}' could not be processed: {exc}"
+                ) from exc
 
             pro_info = {
-                "project_name": ts_json["client"],
-                "order_number": ts_json["client_order_number"],
+                "project_name": ts_json.get("client"),
+                "order_number": ts_json.get("client_order_number"),
             }
-            eng_name = ts_json["engineer_name"]
-            entries = modules.normalize_timesheet_records(ts_json)
+            eng_name = ts_json.get("engineer_name") or uploaded_file.name
 
             if "pro_info" not in ts_details:
                 ts_details["pro_info"] = pro_info
@@ -127,24 +142,29 @@ def show_ready_dialog():
 
 
 def build_po_table_frames(po_json):
-    po_info = po_json["po_info"]
-    po_number = po_info["po_number"]
+    try:
+        po_info = po_json["po_info"]
+        po_number = po_info["po_number"]
 
-    po_master_df = pd.DataFrame([po_info])
+        po_master_df = pd.DataFrame([po_info])
 
-    daily_rates_df = pd.DataFrame(po_json.get("daily_rate", []))
-    if not daily_rates_df.empty:
-        daily_rates_df.insert(0, "po_number", po_number)
+        daily_rates_df = pd.DataFrame(po_json.get("daily_rate", []))
+        if not daily_rates_df.empty:
+            daily_rates_df.insert(0, "po_number", po_number)
 
-    hourly_rates_df = pd.DataFrame(po_json.get("hourly_rate", []))
-    if not hourly_rates_df.empty:
-        hourly_rates_df.insert(0, "po_number", po_number)
+        hourly_rates_df = pd.DataFrame(po_json.get("hourly_rate", []))
+        if not hourly_rates_df.empty:
+            hourly_rates_df.insert(0, "po_number", po_number)
 
-    working_hours_df = pd.DataFrame(po_json.get("working_hours", []))
-    if not working_hours_df.empty:
-        working_hours_df.insert(0, "po_number", po_number)
+        working_hours_df = pd.DataFrame(po_json.get("working_hours", []))
+        if not working_hours_df.empty:
+            working_hours_df.insert(0, "po_number", po_number)
 
-    return po_master_df, daily_rates_df, hourly_rates_df, working_hours_df
+        return po_master_df, daily_rates_df, hourly_rates_df, working_hours_df
+    except KeyError as exc:
+        raise KeyError(f"Extracted PO data is missing required field: {exc}") from exc
+    except Exception as exc:
+        raise RuntimeError(f"Could not prepare extracted PO tables: {exc}") from exc
 
 
 st.markdown(
@@ -158,24 +178,39 @@ st.markdown(
 )
 
 
-api_keys = st.secrets["API_Keys"]
-openai_key = api_keys["openAI"]
-client, error, status_text = modules.client(openai_key)
+try:
+    app_secrets = st.secrets
+except Exception as exc:
+    app_secrets = {}
+    st.warning("Secrets could not be loaded. OpenAI and Supabase features may be unavailable.")
+
+try:
+    api_keys = app_secrets["API_Keys"]
+    openai_key = api_keys["openAI"]
+    client, error, status_text = modules.client(openai_key)
+except Exception as exc:
+    client = None
+    error = True
+    status_text = f"OpenAI client is not configured: {exc}"
 
 if error:
     st.error(status_text)
 else:
     st.caption(status_text)
 
-database_status = database.get_database_status(st.secrets)
-st.caption(
-    f"Database Mode: {database_status['mode']} | Status: {database_status['status']}"
-)
+try:
+    database_status = database.get_database_status(app_secrets)
+    st.caption(
+        f"Database Mode: {database_status['mode']} | Status: {database_status['status']}"
+    )
 
-po_master, po_working_hours, po_daily_rates, po_hourly_rates = database.get_orders_data(
-    st.secrets,
-    database_status["use_supabase"],
-)
+    po_master, po_working_hours, po_daily_rates, po_hourly_rates = database.get_orders_data(
+        app_secrets,
+        database_status["use_supabase"],
+    )
+except Exception as exc:
+    show_error("The order database could not be loaded.", exc)
+    st.stop()
 
 invoice_tab, add_po_tab = st.tabs(["Generate Invoice", "Add New PO"])
 
@@ -283,33 +318,39 @@ with invoice_tab:
         st.session_state["show_excel_review"] = False
         st.session_state["show_ready_dialog"] = False
 
-        ts_details = process_timesheets(timesheets, client)
-        st.session_state["ts_details"] = ts_details
+        try:
+            ts_details = process_timesheets(timesheets, client)
+            st.session_state["ts_details"] = ts_details
 
-        with st.status("Generating calculation sheet...", expanded=True) as status:
-            st.write("Applying PO rates and working hours.")
-            excel_file = modules.fill_calculation_excel(
-                ts_details,
-                po_daily_rates,
-                po_hourly_rates,
-                po_working_hours,
-                role,
-                location,
-                po,
-                invoicing_type,
-            )
-            st.session_state["calculation_excel"] = excel_file.getvalue()
-            status.update(label="Calculation sheet generated.", state="complete")
+            with st.status("Generating calculation sheet...", expanded=True) as status:
+                st.write("Applying PO rates and working hours.")
+                excel_file = modules.fill_calculation_excel(
+                    ts_details,
+                    po_daily_rates,
+                    po_hourly_rates,
+                    po_working_hours,
+                    role,
+                    location,
+                    po,
+                    invoicing_type,
+                )
+                st.session_state["calculation_excel"] = excel_file.getvalue()
+                status.update(label="Calculation sheet generated.", state="complete")
 
-        st.session_state["show_ready_dialog"] = True
+            st.session_state["show_ready_dialog"] = True
+        except Exception as exc:
+            show_error("Calculation sheet generation failed.", exc)
 
     if st.session_state.get("show_ready_dialog") and "calculation_excel" in st.session_state:
         show_ready_dialog()
 
     if st.session_state.get("show_excel_review") and "calculation_excel" in st.session_state:
         st.subheader("Calculation Sheet Review")
-        preview = pd.read_excel(BytesIO(st.session_state["calculation_excel"]), header=None)
-        st.dataframe(preview, use_container_width=True)
+        try:
+            preview = pd.read_excel(BytesIO(st.session_state["calculation_excel"]), header=None)
+            st.dataframe(preview, use_container_width=True)
+        except Exception as exc:
+            show_error("The generated Excel file could not be previewed.", exc)
 
         st.download_button(
             "Download Calculation Sheet",
@@ -345,28 +386,31 @@ with add_po_tab:
         type="primary",
         use_container_width=True,
     ):
-        with st.status("Extracting PO data...", expanded=True) as status:
-            if po_has_price_list:
-                st.write(f"Processing {po_file.name}")
-                po_json = modules.get_po_data(po_file, None, None, True, client)
-            else:
-                st.write(f"Processing {po_file.name}")
-                st.write(f"Processing {price_list_file.name}")
-                po_json = modules.get_po_data(
-                    None,
-                    po_file,
-                    price_list_file,
-                    False,
-                    client,
-                )
+        try:
+            with st.status("Extracting PO data...", expanded=True) as status:
+                if po_has_price_list:
+                    st.write(f"Processing {po_file.name}")
+                    po_json = modules.get_po_data(po_file, None, None, True, client)
+                else:
+                    st.write(f"Processing {po_file.name}")
+                    st.write(f"Processing {price_list_file.name}")
+                    po_json = modules.get_po_data(
+                        None,
+                        po_file,
+                        price_list_file,
+                        False,
+                        client,
+                    )
 
-            (
-                st.session_state["new_po_master"],
-                st.session_state["new_po_daily_rates"],
-                st.session_state["new_po_hourly_rates"],
-                st.session_state["new_po_working_hours"],
-            ) = build_po_table_frames(po_json)
-            status.update(label="PO data extracted.", state="complete")
+                (
+                    st.session_state["new_po_master"],
+                    st.session_state["new_po_daily_rates"],
+                    st.session_state["new_po_hourly_rates"],
+                    st.session_state["new_po_working_hours"],
+                ) = build_po_table_frames(po_json)
+                status.update(label="PO data extracted.", state="complete")
+        except Exception as exc:
+            show_error("PO extraction failed.", exc)
 
     if "new_po_master" in st.session_state:
         st.subheader("Review and edit extracted PO data")
@@ -404,12 +448,15 @@ with add_po_tab:
         )
 
         if st.button("Submit PO to database", type="primary", use_container_width=True):
-            database.save_po_tables(
-                edited_po_master,
-                edited_daily_rates,
-                edited_hourly_rates,
-                edited_working_hours,
-                st.secrets,
-                database_status["use_supabase"],
-            )
-            st.success("PO database updated.")
+            try:
+                database.save_po_tables(
+                    edited_po_master,
+                    edited_daily_rates,
+                    edited_hourly_rates,
+                    edited_working_hours,
+                    app_secrets,
+                    database_status["use_supabase"],
+                )
+                st.success("PO database updated.")
+            except Exception as exc:
+                show_error("PO database update failed.", exc)

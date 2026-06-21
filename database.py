@@ -33,8 +33,11 @@ def get_supabase_client(url, key):
 
 
 def get_database_client(secrets):
-    supabase_config = secrets["Supabase"]
-    return get_supabase_client(supabase_config["url"], supabase_config["key"])
+    try:
+        supabase_config = secrets["Supabase"]
+        return get_supabase_client(supabase_config["url"], supabase_config["key"])
+    except Exception as exc:
+        raise RuntimeError(f"Failed to initialize Supabase client: {exc}") from exc
 
 
 def can_connect_supabase(secrets):
@@ -72,16 +75,34 @@ def get_database_status(secrets):
 
 
 def read_csv_table(table_name):
-    return pd.read_csv(TABLES_DIR / TABLE_FILES[table_name])
+    try:
+        return pd.read_csv(TABLES_DIR / TABLE_FILES[table_name])
+    except KeyError as exc:
+        raise KeyError(f"Unknown table name: {table_name}") from exc
+    except FileNotFoundError as exc:
+        raise FileNotFoundError(
+            f"CSV table file was not found: {TABLES_DIR / TABLE_FILES[table_name]}"
+        ) from exc
+    except Exception as exc:
+        raise RuntimeError(f"Failed to read CSV table '{table_name}': {exc}") from exc
 
 
 def write_csv_table(table_name, df):
-    df.to_csv(TABLES_DIR / TABLE_FILES[table_name], index=False)
+    try:
+        TABLES_DIR.mkdir(exist_ok=True)
+        df.to_csv(TABLES_DIR / TABLE_FILES[table_name], index=False)
+    except KeyError as exc:
+        raise KeyError(f"Unknown table name: {table_name}") from exc
+    except Exception as exc:
+        raise RuntimeError(f"Failed to write CSV table '{table_name}': {exc}") from exc
 
 
 def read_supabase_table(table_name, secrets):
-    client = get_database_client(secrets)
-    response = client.table(table_name).select("*").execute()
+    try:
+        client = get_database_client(secrets)
+        response = client.table(table_name).select("*").execute()
+    except Exception as exc:
+        raise RuntimeError(f"Failed to read Supabase table '{table_name}': {exc}") from exc
 
     if response.data:
         return pd.DataFrame(response.data)
@@ -103,40 +124,52 @@ def prepare_supabase_insert_rows(df):
 
 
 def write_supabase_table(table_name, df, secrets):
-    client = get_database_client(secrets)
-    client.table(table_name).delete().neq("po_number", "__never_match__").execute()
+    try:
+        client = get_database_client(secrets)
+        client.table(table_name).delete().neq("po_number", "__never_match__").execute()
 
-    records = prepare_supabase_insert_rows(df)
-    if records:
-        client.table(table_name).insert(records).execute()
+        records = prepare_supabase_insert_rows(df)
+        if records:
+            client.table(table_name).insert(records).execute()
+    except Exception as exc:
+        raise RuntimeError(f"Failed to write Supabase table '{table_name}': {exc}") from exc
 
 
 def read_table(table_name, secrets=None, use_supabase=None):
     if use_supabase is None:
         use_supabase = secrets is not None and has_supabase_config(secrets)
 
-    if secrets is not None and use_supabase:
-        return read_supabase_table(table_name, secrets)
-    return read_csv_table(table_name)
+    try:
+        if secrets is not None and use_supabase:
+            return read_supabase_table(table_name, secrets)
+        return read_csv_table(table_name)
+    except Exception as exc:
+        raise RuntimeError(f"Could not load table '{table_name}': {exc}") from exc
 
 
 def write_table(table_name, df, secrets=None, use_supabase=None):
     if use_supabase is None:
         use_supabase = secrets is not None and has_supabase_config(secrets)
 
-    if secrets is not None and use_supabase:
-        write_supabase_table(table_name, df, secrets)
-    else:
-        write_csv_table(table_name, df)
+    try:
+        if secrets is not None and use_supabase:
+            write_supabase_table(table_name, df, secrets)
+        else:
+            write_csv_table(table_name, df)
+    except Exception as exc:
+        raise RuntimeError(f"Could not save table '{table_name}': {exc}") from exc
 
 
 def get_orders_data(secrets=None, use_supabase=None):
-    return (
-        read_table("po_master", secrets, use_supabase),
-        read_table("po_working_hours", secrets, use_supabase),
-        read_table("po_daily_rates", secrets, use_supabase),
-        read_table("po_hourly_rates", secrets, use_supabase),
-    )
+    try:
+        return (
+            read_table("po_master", secrets, use_supabase),
+            read_table("po_working_hours", secrets, use_supabase),
+            read_table("po_daily_rates", secrets, use_supabase),
+            read_table("po_hourly_rates", secrets, use_supabase),
+        )
+    except Exception as exc:
+        raise RuntimeError(f"Could not load order database: {exc}") from exc
 
 
 def align_to_columns(df, columns):
@@ -151,31 +184,36 @@ def upsert_by_po_number(table_name, new_rows, secrets=None, use_supabase=None):
     if use_supabase is None:
         use_supabase = secrets is not None and has_supabase_config(secrets)
 
-    existing_rows = read_table(table_name, secrets, use_supabase)
-    new_rows = align_to_columns(new_rows, existing_rows.columns)
+    try:
+        existing_rows = read_table(table_name, secrets, use_supabase)
+        new_rows = align_to_columns(new_rows, existing_rows.columns)
 
-    if new_rows.empty:
-        return
+        if new_rows.empty:
+            return
 
-    po_numbers = set(new_rows["po_number"].astype(str))
+        po_numbers = set(new_rows["po_number"].astype(str))
 
-    if secrets is not None and use_supabase:
-        client = get_database_client(secrets)
-        delete_values = new_rows["po_number"].dropna().unique().tolist()
-        if delete_values:
-            client.table(table_name).delete().in_("po_number", delete_values).execute()
+        if secrets is not None and use_supabase:
+            client = get_database_client(secrets)
+            delete_values = new_rows["po_number"].dropna().unique().tolist()
+            if delete_values:
+                client.table(table_name).delete().in_("po_number", delete_values).execute()
 
-        records = prepare_supabase_insert_rows(new_rows)
-        if records:
-            client.table(table_name).insert(records).execute()
-        return
+            records = prepare_supabase_insert_rows(new_rows)
+            if records:
+                client.table(table_name).insert(records).execute()
+            return
 
-    existing_rows = existing_rows[
-        ~existing_rows["po_number"].astype(str).isin(po_numbers)
-    ]
+        existing_rows = existing_rows[
+            ~existing_rows["po_number"].astype(str).isin(po_numbers)
+        ]
 
-    updated_rows = pd.concat([existing_rows, new_rows], ignore_index=True)
-    write_table(table_name, updated_rows, secrets, use_supabase)
+        updated_rows = pd.concat([existing_rows, new_rows], ignore_index=True)
+        write_table(table_name, updated_rows, secrets, use_supabase)
+    except KeyError as exc:
+        raise KeyError(f"Table '{table_name}' is missing required column: {exc}") from exc
+    except Exception as exc:
+        raise RuntimeError(f"Failed to update table '{table_name}': {exc}") from exc
 
 
 def save_po_tables(
@@ -186,7 +224,10 @@ def save_po_tables(
     secrets=None,
     use_supabase=None,
 ):
-    upsert_by_po_number("po_master", po_master_df, secrets, use_supabase)
-    upsert_by_po_number("po_daily_rates", daily_rates_df, secrets, use_supabase)
-    upsert_by_po_number("po_hourly_rates", hourly_rates_df, secrets, use_supabase)
-    upsert_by_po_number("po_working_hours", working_hours_df, secrets, use_supabase)
+    try:
+        upsert_by_po_number("po_master", po_master_df, secrets, use_supabase)
+        upsert_by_po_number("po_daily_rates", daily_rates_df, secrets, use_supabase)
+        upsert_by_po_number("po_hourly_rates", hourly_rates_df, secrets, use_supabase)
+        upsert_by_po_number("po_working_hours", working_hours_df, secrets, use_supabase)
+    except Exception as exc:
+        raise RuntimeError(f"Failed to save PO database tables: {exc}") from exc
