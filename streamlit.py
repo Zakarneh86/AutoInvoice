@@ -87,15 +87,16 @@ def process_timesheets(uploaded_files, openai_client):
                 "order_number": ts_json["client_order_number"],
             }
             eng_name = ts_json["engineer_name"]
+            entries = modules.normalize_timesheet_records(ts_json)
 
             if "pro_info" not in ts_details:
                 ts_details["pro_info"] = pro_info
 
             if eng_name not in ts_details:
-                ts_details[eng_name] = {"ts1": ts_json["entries"]}
+                ts_details[eng_name] = {"ts1": entries}
             else:
                 timesheet_count = len(ts_details[eng_name].keys()) + 1
-                ts_details[eng_name][f"ts_{timesheet_count}"] = ts_json["entries"]
+                ts_details[eng_name][f"ts_{timesheet_count}"] = entries
 
             progress_bar.progress(index / total_files)
 

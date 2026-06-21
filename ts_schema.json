@@ -4,35 +4,51 @@
         "type": "object",
         "additionalProperties": false,
         "properties": {
-            "client_order_number": {"type": "string"},
-            "service_ref_number": {"type": "string"},
-            "engineer_name": {"type": "string"},
-            "client": {"type": "string"},
-            "plant": {"type": "string"},
-            "entries": {
+            "client_order_number": {"type": ["string", "null"]},
+            "service_ref_number": {"type": ["string", "null"]},
+            "engineer_name": {"type": ["string", "null"]},
+            "client": {"type": ["string", "null"]},
+            "plant": {"type": ["string", "null"]},
+            "records": {
                 "type": "array",
                 "items": {
                     "type": "object",
                     "additionalProperties": false,
                     "properties": {
-                        "day_name": {"type": "string", "enum":["SUN","MON","TUE","WED","THUR","FRI","SAT"]},
-                        "date": {"type": "string"},
-                        "hours_on_site": {"type": ["string", "null"]},
-                        "from_time": {"type": ["string", "null"]},
-                        "to_time": {"type": ["string", "null"]},
-                        "travel_hours": {"type": ["number", "null"]},
-                        "friday_hours": {"type": ["number", "null"]},
-                        "saturday_hours": {"type": ["number", "null"]}
+                        "date": {"type": ["string", "null"]},
+                        "day_name": {
+                            "type": ["string", "null"],
+                            "enum": [
+                                "Sunday",
+                                "Monday",
+                                "Tuesday",
+                                "Wednesday",
+                                "Thursday",
+                                "Friday",
+                                "Saturday",
+                                null
+                            ]
+                        },
+                        "time_range": {"type": ["string", "null"]},
+                        "start_time": {"type": ["string", "null"]},
+                        "end_time": {"type": ["string", "null"]},
+                        "work_duration_hours": {"type": ["number", "null"]},
+                        "travel_duration_hours": {"type": ["number", "null"]},
+                        "location": {"type": ["string", "null"]},
+                        "description": {"type": ["string", "null"]},
+                        "raw_text": {"type": ["string", "null"]}
                     },
                     "required": [
-                        "day_name",
                         "date",
-                        "hours_on_site",
-                        "from_time",
-                        "to_time",
-                        "travel_hours",
-                        "friday_hours",
-                        "saturday_hours"
+                        "day_name",
+                        "time_range",
+                        "start_time",
+                        "end_time",
+                        "work_duration_hours",
+                        "travel_duration_hours",
+                        "location",
+                        "description",
+                        "raw_text"
                     ]
                 }
             }
@@ -43,6 +59,6 @@
             "engineer_name",
             "client",
             "plant",
-            "entries"
+            "records"
         ]
     }}

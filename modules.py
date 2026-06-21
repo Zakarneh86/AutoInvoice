@@ -103,30 +103,44 @@ Final Rules:
 
 ## Timesheet Reader Prompts
 TIMESHEET_SYSTEM_PROMPT = f"""
-You are an expert timesheet analysis and data extraction engine.
-Your task is to extract structured information from timesheets and return only data that is explicitly stated in the document.
-Rules:
-1. Return only JSON matching the schema.
-2. Extract one entry per populated row in the timesheet table.
-3. Do not calculate normal, overtime, or hot hours.
-4. Do not interpret PO rules.
-5. Extract dates exactly from the table.
-6. Extract From and To times exactly as written.
-7. Extract values from columns:
-   A = travel_hours
-   B = weekday_friday_hours
-   C = saturday_hours
-8. If "HOURS ON SITE" does'nt have "FROM" and "TO" return the cell value in "Hours_on_site".
-9. If "HOURS ON SITE" has values in "FROM" and "TO" return null in "Hours_on_site".
-10. If "HOURS ON SITE" and "TRAV" and "EKD/FRI" and "SAT" are all null return null in all cell even if the date has value.
-11. If a cell is blank return null.
-12. If a cell is blank return null.
-13. Ignore signatures and stamps.
-14. Do not infer missing rows.
-15. Extract engineer name, PO number, client and plant from the header.
-16. The engineer name is typically located near the "FOR EMERSON:" signature block.
-17. The engineer name may appear above, below, or beside the Emerson signature.
-18. Do not use names found in the "FOR CLIENT:" section."""
+You are extracting factual work-record data from a document.
+
+The document format may vary. It may be a table, scanned form, handwritten form, signed sheet, daily log, or any other layout.
+
+Extract only facts explicitly present in the document.
+Do not calculate invoice values.
+Do not classify billing categories.
+Do not infer rates, normal hours, overtime, weekend hours, holidays, or invoice rules.
+
+Identify each distinct work record or attendance record in the document.
+
+For each record, extract:
+- work date, if present
+- day name, if present
+- any time range, if present
+- any total work duration, if present
+- any travel duration, if present
+- any location, site, activity, remarks, or description, if present
+
+If a value is not clearly present, return null.
+If multiple pages exist, extract records from all pages.
+Preserve factual values. Do not move hours between categories.
+Use YYYY-MM-DD for dates when confidently possible.
+Use HH:MM 24-hour format for times when confidently possible.
+
+Data Quality Rules:
+
+1. Timesheets may contain dates with no associated work hours, travel hours, start time, or end time.
+2. Do not assume that a date entry represents work performed.
+3. If a date exists but no hours or time information are present, extract the date and return null for the missing values.
+4. Do not populate work_duration_hours, travel_duration_hours, start_time, end_time, or time_range unless they are explicitly present in the document.
+5. Do not carry values from previous or subsequent records into empty records.
+6. Do not infer that a day was worked simply because it appears in the document.
+7. Empty cells, blank rows, dashes, or missing entries should be treated as null unless the document explicitly states a value.
+8. If a record contains a date but all work-related fields are blank, still create a record for that date with null values.
+
+Return only JSON matching the schema.
+Ignore signatures and stamps except where they explicitly identify the person associated with the work records."""
 
 ##################################
 #       PO Reader Functions      #
@@ -272,6 +286,64 @@ def generate_ts_details(timesheet, client):
 
   return json.loads(response.output_text)
 
+def normalize_day_name(day_name, date_text=None):
+    day_map = {
+        "SUNDAY": "SUN",
+        "SUN": "SUN",
+        "MONDAY": "MON",
+        "MON": "MON",
+        "TUESDAY": "TUE",
+        "TUE": "TUE",
+        "TUES": "TUE",
+        "WEDNESDAY": "WED",
+        "WED": "WED",
+        "THURSDAY": "THUR",
+        "THU": "THUR",
+        "THUR": "THUR",
+        "THURS": "THUR",
+        "FRIDAY": "FRI",
+        "FRI": "FRI",
+        "SATURDAY": "SAT",
+        "SAT": "SAT",
+    }
+
+    if day_name:
+        cleaned_day = str(day_name).strip().upper().replace(".", "")
+        if cleaned_day in day_map:
+            return day_map[cleaned_day]
+
+    if date_text:
+        try:
+            return clean_date(date_text).strftime("%a").upper().replace("THU", "THUR")
+        except Exception:
+            return None
+
+    return None
+
+def normalize_timesheet_records(ts_json):
+    records = ts_json.get("records", ts_json.get("entries", []))
+    entries = []
+
+    for record in records:
+        date_text = record.get("date")
+        day_name = normalize_day_name(record.get("day_name"), date_text)
+        entries.append({
+            "day_name": day_name,
+            "date": date_text,
+            "hours_on_site": record.get("work_duration_hours", record.get("hours_on_site")),
+            "from_time": record.get("start_time", record.get("from_time")),
+            "to_time": record.get("end_time", record.get("to_time")),
+            "travel_hours": record.get("travel_duration_hours", record.get("travel_hours")),
+            "friday_hours": None,
+            "saturday_hours": None,
+            "time_range": record.get("time_range"),
+            "location": record.get("location"),
+            "description": record.get("description"),
+            "raw_text": record.get("raw_text"),
+        })
+
+    return entries
+
 ## Timesheets Detail Extraction
 def get_timesheets_data(uploaded_files, client):
     ts_details = {}
@@ -286,15 +358,16 @@ def get_timesheets_data(uploaded_files, client):
             "order_number": ts_json["client_order_number"],
         }
         eng_name = ts_json["engineer_name"]
+        entries = normalize_timesheet_records(ts_json)
 
         if "pro_info" not in ts_details:
             ts_details["pro_info"] = pro_info
 
         if eng_name not in ts_details:
-            ts_details[eng_name] = {"ts1": ts_json["entries"]}
+            ts_details[eng_name] = {"ts1": entries}
         else:
             timesheet_count = len(ts_details[eng_name].keys()) + 1
-            ts_details[eng_name][f"ts_{timesheet_count}"] = ts_json["entries"]
+            ts_details[eng_name][f"ts_{timesheet_count}"] = entries
 
     return ts_details
 
@@ -342,22 +415,24 @@ def clean_date(date_text):
 
 ## Time Classification Dunction
 def classify_entry(entry, minimum_normal_hours):
-    day_name = entry["day_name"]
+    day_name = normalize_day_name(entry.get("day_name"), entry.get("date"))
 
     hours_on_site = to_num(entry.get("hours_on_site"))
     travel_hours = to_num(entry.get("travel_hours"))
     from_time = to_num(entry.get("from_time"))
     to_time = to_num(entry.get("to_time"))
-    friday_hours = to_num(entry.get("friday_hours"))
-    saturday_hours = to_num(entry.get("saturday_hours"))
+    friday_hours = 0
+    saturday_hours = 0
+    raw_friday_hours = to_num(entry.get("friday_hours"))
+    raw_saturday_hours = to_num(entry.get("saturday_hours"))
 
     has_time_entry = any([
         hours_on_site > 0,
         travel_hours > 0,
         from_time > 0,
         to_time > 0,
-        friday_hours > 0,
-        saturday_hours > 0
+        raw_friday_hours > 0,
+        raw_saturday_hours > 0
     ])
 
     if not has_time_entry:
@@ -383,7 +458,7 @@ def classify_entry(entry, minimum_normal_hours):
             overtime_hours = total_hours - minimum_normal_hours
 
     elif day_name == "FRI":
-        friday_hours = to_num(entry.get("friday_hours"))
+        friday_hours = raw_friday_hours
 
         if friday_hours == 0:
             friday_hours = hours_on_site or duration_hours(
@@ -392,7 +467,7 @@ def classify_entry(entry, minimum_normal_hours):
             )
 
     elif day_name == "SAT":
-        saturday_hours = to_num(entry.get("saturday_hours"))
+        saturday_hours = raw_saturday_hours
 
         if saturday_hours == 0:
             saturday_hours = hours_on_site or duration_hours(
@@ -411,6 +486,7 @@ def classify_entry(entry, minimum_normal_hours):
 
 
 def classify_daily_entry(entry):
+    day_name = normalize_day_name(entry.get("day_name"), entry.get("date"))
     hours_on_site = to_num(entry.get("hours_on_site"))
     travel_hours = to_num(entry.get("travel_hours"))
     from_time = to_num(entry.get("from_time"))
@@ -431,7 +507,7 @@ def classify_daily_entry(entry):
         return None
 
     return {
-        "day_name": entry["day_name"],
+        "day_name": day_name,
         "date": clean_date(entry["date"]),
         "normal": 1,
         "ot": 0,
@@ -441,7 +517,7 @@ def classify_daily_entry(entry):
 
 
 def classify_mixed_entry(entry, minimum_normal_hours):
-    day_name = entry["day_name"]
+    day_name = normalize_day_name(entry.get("day_name"), entry.get("date"))
 
     hours_on_site = to_num(entry.get("hours_on_site"))
     travel_hours = to_num(entry.get("travel_hours"))
