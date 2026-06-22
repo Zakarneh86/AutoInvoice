@@ -34,6 +34,7 @@
                         "end_time": {"type": ["string", "null"]},
                         "work_duration_hours": {"type": ["number", "null"]},
                         "travel_duration_hours": {"type": ["number", "null"]},
+                        "total_hours": {"type": ["number", "null"]},
                         "location": {"type": ["string", "null"]},
                         "description": {"type": ["string", "null"]},
                         "raw_text": {"type": ["string", "null"]}
@@ -46,6 +47,7 @@
                         "end_time",
                         "work_duration_hours",
                         "travel_duration_hours",
+                        "total_hours",
                         "location",
                         "description",
                         "raw_text"
