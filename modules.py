@@ -149,7 +149,6 @@ def has_useful_pdf_text(text, min_chars=80):
     clean_text = "".join(char for char in text if char.isalnum())
     return len(clean_text) >= min_chars
 
-
 def pdf_page_to_image_content(page, dpi):
     zoom = dpi / 72
     matrix = pymupdf.Matrix(zoom, zoom)
@@ -160,7 +159,6 @@ def pdf_page_to_image_content(page, dpi):
         "type": "input_image",
         "image_url": f"data:image/png;base64,{image_b64}",
     }
-
 
 def po_pdf_to_openai_content(uploaded_file, dpi=220):
     doc = None
@@ -389,7 +387,10 @@ def normalize_timesheet_records(ts_json):
         entries.append({
             "day_name": day_name,
             "date": date_text,
-            "hours_on_site": record.get("work_duration_hours", record.get("hours_on_site")),
+            "hours_on_site":(
+                                record.get("work_duration_hours")
+                                or record.get("hours_on_site")
+                                or record.get("total_hours"),),
             "from_time": record.get("start_time", record.get("from_time")),
             "to_time": record.get("end_time", record.get("to_time")),
             "travel_hours": record.get("travel_duration_hours", record.get("travel_hours")),
