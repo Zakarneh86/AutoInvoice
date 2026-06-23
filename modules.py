@@ -367,6 +367,12 @@ def normalize_day_name(day_name, date_text=None):
 
     return None
 
+def first_present(*values):
+    for value in values:
+        if value is not None:
+            return value
+    return None
+
 def normalize_timesheet_records(ts_json):
     if not isinstance(ts_json, dict):
         raise ValueError("Timesheet extraction result is not a valid object.")
@@ -387,10 +393,11 @@ def normalize_timesheet_records(ts_json):
         entries.append({
             "day_name": day_name,
             "date": date_text,
-            "hours_on_site":(
-                                record.get("work_duration_hours")
-                                or record.get("hours_on_site")
-                                or record.get("total_hours"),),
+            "hours_on_site": first_present(
+                record.get("work_duration_hours"),
+                record.get("hours_on_site"),
+                record.get("total_hours"),
+            ),
             "from_time": record.get("start_time", record.get("from_time")),
             "to_time": record.get("end_time", record.get("to_time")),
             "travel_hours": record.get("travel_duration_hours", record.get("travel_hours")),
