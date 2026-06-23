@@ -479,7 +479,32 @@ def duration_hours(from_time, to_time):
 
     return end - start
 
-def clean_date(date_text):
+def clean_date(date_text, day_name=None):
+    if not date_text:
+        return None
+
+    date_text = str(date_text).strip()
+
+    # ISO format is unambiguous
+    try:
+        return parser.parse(date_text, yearfirst=True).date()
+    except Exception:
+        pass
+
+    # If day name is available, use it to choose dayfirst/monthfirst
+    if day_name:
+        parsed_dayfirst = parser.parse(date_text, dayfirst=True).date()
+        parsed_monthfirst = parser.parse(date_text, dayfirst=False).date()
+
+        expected_day = normalize_day_name(day_name)
+
+        if normalize_day_name(parsed_dayfirst.strftime("%A")) == expected_day:
+            return parsed_dayfirst
+
+        if normalize_day_name(parsed_monthfirst.strftime("%A")) == expected_day:
+            return parsed_monthfirst
+
+    # Fallback to your current regional default
     return parser.parse(date_text, dayfirst=True).date()
 
 ## Time Classification Dunction
@@ -551,13 +576,12 @@ def classify_entry(entry, minimum_normal_hours):
 
     return {
         "day_name": day_name,
-        "date": clean_date(entry["date"]),
+        "date": clean_date(entry["date"], day_name),
         "normal": normal_hours,
         "ot": overtime_hours,
         "fri": friday_hours,
         "sat": saturday_hours
     }
-
 
 def classify_daily_entry(entry):
     if not entry.get("date"):
@@ -587,13 +611,12 @@ def classify_daily_entry(entry):
 
     return {
         "day_name": day_name,
-        "date": clean_date(entry["date"]),
+        "date": clean_date(entry["date"], day_name),
         "normal": 1,
         "ot": 0,
         "fri": 0,
         "sat": 0
     }
-
 
 def classify_mixed_entry(entry, minimum_normal_hours):
     if not entry.get("date"):
@@ -630,13 +653,12 @@ def classify_mixed_entry(entry, minimum_normal_hours):
 
     return {
         "day_name": day_name,
-        "date": clean_date(entry["date"]),
+        "date": clean_date(entry["date"], day_name),
         "normal": 1,
         "ot": extra_hours if day_name in ["SUN", "MON", "TUE", "WED", "THUR"] else 0,
         "fri": extra_hours if day_name == "FRI" else 0,
         "sat": extra_hours if day_name == "SAT" else 0
     }
-
 
 def classify_entry_by_invoicing_type(entry, minimum_normal_hours, invoicing_type):
     if invoicing_type == "daily":
@@ -645,12 +667,10 @@ def classify_entry_by_invoicing_type(entry, minimum_normal_hours, invoicing_type
         return classify_mixed_entry(entry, minimum_normal_hours)
     return classify_entry(entry, minimum_normal_hours)
 
-
 def clean_rate(value):
     if pd.isna(value):
         return 0
     return value
-
 
 def find_rate_row(rate_table, po, role, location):
     exact_match = rate_table[
