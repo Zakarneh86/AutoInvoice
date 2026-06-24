@@ -13,6 +13,7 @@ TABLE_FILES = {
     "po_working_hours": "po_working_hours.csv",
 }
 SUPABASE_GENERATED_COLUMNS = ["id"]
+EXTRACTION_LOGS_TABLE = "extraction_logs"
 
 
 def has_supabase_config(secrets):
@@ -72,6 +73,37 @@ def get_database_status(secrets):
         "status": "Not Connected",
         "use_supabase": False,
     }
+
+
+def log_timesheet_extraction(
+    secrets,
+    source_file_name,
+    po_number=None,
+    engineer_name=None,
+    status="success",
+    error_message=None,
+    extracted_json=None,
+    metadata=None,
+):
+    if not has_supabase_config(secrets):
+        return False
+
+    try:
+        client = get_database_client(secrets)
+        row = {
+            "extraction_type": "timesheet",
+            "source_file_name": source_file_name,
+            "po_number": po_number,
+            "engineer_name": engineer_name,
+            "status": status,
+            "error_message": error_message,
+            "extracted_json": extracted_json,
+            "metadata": metadata,
+        }
+        client.table(EXTRACTION_LOGS_TABLE).insert(row).execute()
+        return True
+    except Exception as exc:
+        raise RuntimeError(f"Failed to log timesheet extraction: {exc}") from exc
 
 
 def read_csv_table(table_name):

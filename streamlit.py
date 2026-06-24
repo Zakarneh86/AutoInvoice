@@ -16,6 +16,32 @@ def show_error(message, exc):
         st.exception(exc)
 
 
+def safe_log_timesheet_extraction(
+    secrets,
+    source_file_name,
+    po_number=None,
+    engineer_name=None,
+    status="success",
+    error_message=None,
+    extracted_json=None,
+    metadata=None,
+):
+    try:
+        return database.log_timesheet_extraction(
+            secrets,
+            source_file_name=source_file_name,
+            po_number=po_number,
+            engineer_name=engineer_name,
+            status=status,
+            error_message=error_message,
+            extracted_json=extracted_json,
+            metadata=metadata,
+        )
+    except Exception as exc:
+        st.warning(f"Timesheet extraction was not logged: {exc}")
+        return False
+
+
 st.set_page_config(
     page_title="Auto Invoice",
     page_icon=":page_facing_up:",
@@ -72,7 +98,7 @@ st.markdown(
 )
 
 
-def process_timesheets(uploaded_files, openai_client):
+def process_timesheets(uploaded_files, openai_client, secrets=None, po_number=None):
     ts_details = {}
     total_files = len(uploaded_files)
     progress_bar = st.progress(0)
@@ -90,6 +116,18 @@ def process_timesheets(uploaded_files, openai_client):
                 ts_json = modules.generate_ts_details(timesheet, openai_client)
                 entries = modules.normalize_timesheet_records(ts_json)
             except Exception as exc:
+                if secrets is not None:
+                    safe_log_timesheet_extraction(
+                        secrets,
+                        source_file_name=uploaded_file.name,
+                        po_number=po_number,
+                        status="failed",
+                        error_message=str(exc),
+                        metadata={
+                            "file_index": index,
+                            "total_files": total_files,
+                        },
+                    )
                 status.update(
                     label=f"Failed while processing {uploaded_file.name}",
                     state="error",
@@ -103,6 +141,22 @@ def process_timesheets(uploaded_files, openai_client):
                 "order_number": ts_json.get("client_order_number"),
             }
             eng_name = ts_json.get("engineer_name") or uploaded_file.name
+            log_po_number = po_number or ts_json.get("client_order_number")
+
+            if secrets is not None:
+                safe_log_timesheet_extraction(
+                    secrets,
+                    source_file_name=uploaded_file.name,
+                    po_number=log_po_number,
+                    engineer_name=eng_name,
+                    status="success",
+                    extracted_json=ts_json,
+                    metadata={
+                        "file_index": index,
+                        "total_files": total_files,
+                        "record_count": len(entries),
+                    },
+                )
 
             if "pro_info" not in ts_details:
                 ts_details["pro_info"] = pro_info
@@ -319,7 +373,12 @@ with invoice_tab:
         st.session_state["show_ready_dialog"] = False
 
         try:
-            ts_details = process_timesheets(timesheets, client)
+            ts_details = process_timesheets(
+                timesheets,
+                client,
+                secrets=app_secrets,
+                po_number=po,
+            )
             st.session_state["ts_details"] = ts_details
 
             with st.status("Generating calculation sheet...", expanded=True) as status:
