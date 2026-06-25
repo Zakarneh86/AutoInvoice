@@ -1,5 +1,6 @@
 import json
 import os
+import re
 from io import BytesIO
 from openai import OpenAI
 try:
@@ -10,6 +11,7 @@ from pathlib import Path
 import base64
 import pandas as pd
 from openpyxl import load_workbook
+from openpyxl.utils import range_boundaries
 from copy import copy
 from dateutil import parser
 
@@ -450,6 +452,9 @@ ENGINEER_BLOCKS = [
     {"name_cell": "J4", "cols": {"normal": "J", "ot": "K", "fri": "L", "sat": "M"}},
     {"name_cell": "N4", "cols": {"normal": "N", "ot": "O", "fri": "P", "sat": "Q"}},
 ]
+DATE_START_ROW = 6
+TEMPLATE_DATE_END_ROW = 36
+TEMPLATE_SUMMARY_START_ROW = 37
 
 ## Supporting Functions for Time Classification
 def to_num(value):
@@ -708,6 +713,91 @@ def find_rate_row(rate_table, po, role, location):
         f"No matching rate row found for PO '{po}', role '{role}', location '{location}'."
     )
 
+def shift_formula_rows(formula, start_row, offset):
+    cell_ref_pattern = re.compile(r"(\$?[A-Z]{1,3})(\$?)(\d+)")
+
+    def shift_match(match):
+        column, absolute_row, row_text = match.groups()
+        row = int(row_text)
+        if row >= start_row:
+            return f"{column}{absolute_row}{row + offset}"
+        return match.group(0)
+
+    return cell_ref_pattern.sub(shift_match, formula)
+
+
+def expand_date_rows_if_needed(ws, date_count):
+    template_date_capacity = TEMPLATE_DATE_END_ROW - DATE_START_ROW + 1
+    if date_count <= template_date_capacity:
+        date_end_row = TEMPLATE_DATE_END_ROW
+        return {
+            "date_end_row": date_end_row,
+            "hours_row": 37,
+            "rates_row": 38,
+            "bill_row": 39,
+            "total_invoice_row": 40,
+        }
+
+    extra_rows = date_count - template_date_capacity
+    merged_ranges = list(ws.merged_cells.ranges)
+
+    for merged_range in merged_ranges:
+        ws.unmerge_cells(str(merged_range))
+
+    ws.insert_rows(TEMPLATE_SUMMARY_START_ROW, extra_rows)
+
+    for target_row in range(TEMPLATE_SUMMARY_START_ROW, TEMPLATE_SUMMARY_START_ROW + extra_rows):
+        ws.row_dimensions[target_row].height = ws.row_dimensions[TEMPLATE_DATE_END_ROW].height
+        for column_index in range(1, ws.max_column + 1):
+            source_cell = ws.cell(row=TEMPLATE_DATE_END_ROW, column=column_index)
+            target_cell = ws.cell(row=target_row, column=column_index)
+            if source_cell.has_style:
+                target_cell._style = copy(source_cell._style)
+            target_cell.number_format = source_cell.number_format
+            target_cell.protection = copy(source_cell.protection)
+            target_cell.alignment = copy(source_cell.alignment)
+            target_cell.value = None
+
+    for merged_range in merged_ranges:
+        min_col, min_row, max_col, max_row = range_boundaries(str(merged_range))
+        if min_row >= TEMPLATE_SUMMARY_START_ROW:
+            min_row += extra_rows
+            max_row += extra_rows
+        elif max_row >= TEMPLATE_SUMMARY_START_ROW:
+            max_row += extra_rows
+
+        ws.merge_cells(
+            start_row=min_row,
+            start_column=min_col,
+            end_row=max_row,
+            end_column=max_col,
+        )
+
+    date_end_row = TEMPLATE_DATE_END_ROW + extra_rows
+    for row in ws.iter_rows():
+        for cell in row:
+            if isinstance(cell.value, str) and cell.value.startswith("="):
+                formula = shift_formula_rows(
+                    cell.value,
+                    TEMPLATE_SUMMARY_START_ROW,
+                    extra_rows,
+                )
+                formula = re.sub(
+                    r"(\$?[A-Z]{1,3}\$?6:\$?[A-Z]{1,3}\$?)36\b",
+                    rf"\g<1>{date_end_row}",
+                    formula,
+                )
+                cell.value = formula
+
+    return {
+        "date_end_row": date_end_row,
+        "hours_row": 37 + extra_rows,
+        "rates_row": 38 + extra_rows,
+        "bill_row": 39 + extra_rows,
+        "total_invoice_row": 40 + extra_rows,
+    }
+
+
 # Calculation Excel Sheet Generator (This Needs to be Modified)
 def fill_calculation_excel(
     ts_details,
@@ -806,7 +896,13 @@ def fill_calculation_excel(
 
     sorted_dates = sorted(all_dates)
 
-    start_row = 6
+    template_rows = expand_date_rows_if_needed(ws, len(sorted_dates))
+    start_row = DATE_START_ROW
+    date_end_row = template_rows["date_end_row"]
+    hours_row = template_rows["hours_row"]
+    rates_row = template_rows["rates_row"]
+    bill_row = template_rows["bill_row"]
+    total_invoice_row = template_rows["total_invoice_row"]
 
     for i, date in enumerate(sorted_dates):
         row = start_row + i
@@ -829,10 +925,16 @@ def fill_calculation_excel(
             ws[f'{block["cols"]["fri"]}{row}'] = values["fri"]
             ws[f'{block["cols"]["sat"]}{row}'] = values["sat"]
 
-        ws[f'{block["cols"]["normal"]}38'] = normal_rate
-        ws[f'{block["cols"]["ot"]}38'] = ot_rate
-        ws[f'{block["cols"]["fri"]}38'] = friday_rate
-        ws[f'{block["cols"]["sat"]}38'] = saturday_rate
+        for column in block["cols"].values():
+            ws[f"{column}{hours_row}"] = f"=SUM({column}{start_row}:{column}{date_end_row})"
+            ws[f"{column}{bill_row}"] = f"={column}{hours_row}*{column}{rates_row}"
+
+        ws[f'{block["cols"]["normal"]}{rates_row}'] = normal_rate
+        ws[f'{block["cols"]["ot"]}{rates_row}'] = ot_rate
+        ws[f'{block["cols"]["fri"]}{rates_row}'] = friday_rate
+        ws[f'{block["cols"]["sat"]}{rates_row}'] = saturday_rate
+
+    ws[f"B{total_invoice_row}"] = f"=SUM(B{bill_row}:Q{bill_row})"
 
     try:
         excel_file = BytesIO()
