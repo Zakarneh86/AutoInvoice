@@ -52,6 +52,19 @@ st.set_page_config(
 st.markdown(
     """
     <style>
+        [data-testid="stToolbar"],
+        [data-testid="stDecoration"],
+        [data-testid="stStatusWidget"],
+        [data-testid="stMainMenu"],
+        .stDeployButton,
+        #MainMenu,
+        header,
+        footer {
+            display: none !important;
+            visibility: hidden !important;
+            height: 0 !important;
+        }
+
         .block-container {
             max-width: 1180px;
             padding-top: 2rem;
