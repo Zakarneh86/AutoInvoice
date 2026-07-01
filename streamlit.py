@@ -255,16 +255,14 @@ try:
     model_url = app_secrets["runpod"]["url"]
     model = app_secrets["runpod"]["model"]
     client, error, status_text = modules.client(model_url, model)
+    st.caption(status_text)
 except Exception as exc:
     client = None
     error = True
     model = None
     status_text = f"RunPod Qwen client is not configured: {exc}"
-
-if error:
-    st.error(status_text)
-else:
-    st.caption(status_text)
+    show_error(f"RunPod Qwen client is not configured. Contact the Admin for Support", exc)
+    
 
 try:
     database_status = database.get_database_status(app_secrets)
