@@ -202,7 +202,7 @@ def po_pdf_to_openai_content(uploaded_file, dpi=220):
 
 
 ## PO Details Extraction using OpenAI
-def generate_po_details(po_content, ai_client):
+def generate_po_details(po_content, ai_client, model):
     if not po_content:
         raise ValueError("No PO content was provided for extraction.")
 
@@ -214,7 +214,7 @@ def generate_po_details(po_content, ai_client):
 
     try:
         response = ai_client.chat.completions.create(
-            model="qwen2.5-vl-32b-awq",
+            model=model,
             input=[
                 {
                     "role": "system",

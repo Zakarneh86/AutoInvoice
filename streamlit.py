@@ -254,6 +254,8 @@ except Exception as exc:
 try:
     api_keys = app_secrets["API_Keys"]
     openai_key = api_keys["openAI"]
+    model_url = app_secrets["runpod"]["url"]
+    model = app_secrets["runpod"]["model"]
     client, error, status_text = modules.client(openai_key)
 except Exception as exc:
     client = None
