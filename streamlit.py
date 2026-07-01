@@ -255,7 +255,7 @@ try:
     model_url = app_secrets["runpod"]["url"]
     model = app_secrets["runpod"]["model"]
     client, error, status_text = modules.client(model_url, model)
-    #st.caption(status_text)
+    st.caption(status_text)
 except Exception as exc:
     client = None
     error = True
