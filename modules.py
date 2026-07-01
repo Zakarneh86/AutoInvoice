@@ -20,7 +20,7 @@ from dateutil import parser
 ##################################
 
 ## Initialize OpenAI client
-def client(server_url: str):
+def client(server_url: str, model: str | None = None):
     try:
         server_url = server_url.rstrip("/")
         client = OpenAI(
@@ -28,8 +28,14 @@ def client(server_url: str):
             base_url=f"{server_url}/v1"
         )
 
+        models = client.models.list()
+        available_models = [m.id for m in models.data]
+
+        if model and model not in available_models:
+            return client, True, f"Qwen connected, but model '{model}' was not found."
+
         error = False
-        status_text = "Qwen client initialized successfully."
+        status_text = "Qwen server connected successfully."
         return client, error, status_text
 
     except Exception as e:

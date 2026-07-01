@@ -254,7 +254,7 @@ except Exception as exc:
 try:
     model_url = app_secrets["runpod"]["url"]
     model = app_secrets["runpod"]["model"]
-    client, error, status_text = modules.client(model_url)
+    client, error, status_text = modules.client(model_url, model)
 except Exception as exc:
     client = None
     error = True
