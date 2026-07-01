@@ -21,28 +21,22 @@ from dateutil import parser
 
 ## Initialize OpenAI client
 def client(server_url: str, model: str | None = None):
-    try:
-        server_url = server_url.rstrip("/")
-        client = OpenAI(
-            api_key="dummy",                 # vLLM ignores it by default
-            base_url=f"{server_url}/v1"
-        )
+    if not server_url:
+        raise ValueError("RunPod server URL is required.")
 
-        models = client.models.list()
-        available_models = [m.id for m in models.data]
+    server_url = server_url.rstrip("/")
+    client = OpenAI(
+        api_key="dummy",                 # vLLM ignores it by default
+        base_url=f"{server_url}/v1"
+    )
 
-        if model and model not in available_models:
-            return client, True, f"Qwen connected, but model '{model}' was not found."
+    models = client.models.list()
+    available_models = [m.id for m in models.data]
 
-        error = False
-        status_text = "Qwen server connected successfully."
-        return client, error, status_text
+    if model and model not in available_models:
+        raise ValueError(f"Qwen connected, but model '{model}' was not found.")
 
-    except Exception as e:
-        client = None
-        error = True
-        status_text = f"Failed to initialize Qwen client: {e}"
-        return client, error, status_text
+    return client, False, "Qwen server connected successfully."
 
 ## Loading PO Json Schema
 with open("po_schema.json", "r") as f:
