@@ -111,7 +111,7 @@ st.markdown(
 )
 
 
-def process_timesheets(uploaded_files, openai_client, secrets=None, po_number=None):
+def process_timesheets(uploaded_files, ai_client, model, secrets=None, po_number=None):
     ts_details = {}
     total_files = len(uploaded_files)
     progress_bar = st.progress(0)
@@ -126,7 +126,7 @@ def process_timesheets(uploaded_files, openai_client, secrets=None, po_number=No
 
             try:
                 timesheet = modules.file_to_base64(uploaded_file)
-                ts_json = modules.generate_ts_details(timesheet, openai_client)
+                ts_json = modules.generate_ts_details(timesheet, ai_client, model)
                 entries = modules.normalize_timesheet_records(ts_json)
             except Exception as exc:
                 if secrets is not None:
@@ -249,18 +249,17 @@ try:
     app_secrets = st.secrets
 except Exception as exc:
     app_secrets = {}
-    st.warning("Secrets could not be loaded. OpenAI and Supabase features may be unavailable.")
+    st.warning("Secrets could not be loaded. AI and Supabase features may be unavailable.")
 
 try:
-    api_keys = app_secrets["API_Keys"]
-    openai_key = api_keys["openAI"]
     model_url = app_secrets["runpod"]["url"]
     model = app_secrets["runpod"]["model"]
-    client, error, status_text = modules.client(openai_key)
+    client, error, status_text = modules.client(model_url)
 except Exception as exc:
     client = None
     error = True
-    status_text = f"OpenAI client is not configured: {exc}"
+    model = None
+    status_text = f"RunPod Qwen client is not configured: {exc}"
 
 if error:
     st.error(status_text)
@@ -391,6 +390,7 @@ with invoice_tab:
             ts_details = process_timesheets(
                 timesheets,
                 client,
+                model,
                 secrets=app_secrets,
                 po_number=po,
             )
@@ -464,7 +464,7 @@ with add_po_tab:
             with st.status("Extracting PO data...", expanded=True) as status:
                 if po_has_price_list:
                     st.write(f"Processing {po_file.name}")
-                    po_json = modules.get_po_data(po_file, None, None, True, client)
+                    po_json = modules.get_po_data(po_file, None, None, True, client, model)
                 else:
                     st.write(f"Processing {po_file.name}")
                     st.write(f"Processing {price_list_file.name}")
@@ -474,6 +474,7 @@ with add_po_tab:
                         price_list_file,
                         False,
                         client,
+                        model,
                     )
 
                 (

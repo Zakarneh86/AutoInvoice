@@ -22,6 +22,7 @@ from dateutil import parser
 ## Initialize OpenAI client
 def client(server_url: str):
     try:
+        server_url = server_url.rstrip("/")
         client = OpenAI(
             api_key="dummy",                 # vLLM ignores it by default
             base_url=f"{server_url}/v1"
@@ -163,9 +164,40 @@ def pdf_page_to_image_content(page, dpi):
     image_bytes = pix.tobytes("png")
     image_b64 = base64.b64encode(image_bytes).decode("utf-8")
     return {
-        "type": "input_image",
-        "image_url": f"data:image/png;base64,{image_b64}",
+        "type": "image_url",
+        "image_url": {"url": f"data:image/png;base64,{image_b64}"},
     }
+
+def text_content(text):
+    return {
+        "type": "text",
+        "text": text,
+    }
+
+def json_schema_response_format(schema):
+    return {
+        "type": "json_schema",
+        "json_schema": {
+            "name": schema["name"],
+            "schema": schema["schema"],
+            "strict": True,
+        },
+    }
+
+def parse_chat_json_response(response):
+    content = response.choices[0].message.content
+    if isinstance(content, list):
+        content = "".join(
+            part.get("text", "") if isinstance(part, dict) else str(part)
+            for part in content
+        )
+
+    content = str(content).strip()
+    if content.startswith("```"):
+        content = re.sub(r"^```(?:json)?\s*", "", content)
+        content = re.sub(r"\s*```$", "", content)
+
+    return json.loads(content)
 
 def po_pdf_to_openai_content(uploaded_file, dpi=220):
     doc = None
@@ -183,7 +215,7 @@ def po_pdf_to_openai_content(uploaded_file, dpi=220):
             text = page.get_text().strip()
             if has_useful_pdf_text(text):
                 content.append({
-                    "type": "input_text",
+                    "type": "text",
                     "text": f"Page {page_number} text:\n{text}",
                 })
             else:
@@ -206,16 +238,15 @@ def generate_po_details(po_content, ai_client, model):
     if not po_content:
         raise ValueError("No PO content was provided for extraction.")
 
-    user_content = [{
-        "type": "input_text",
-        "text": "Customer PO details. Some pages may be scanned images. Extract all PO and rate information from the text and images provided.",
-    }]
+    user_content = [text_content(
+        "Customer PO details. Some pages may be scanned images. Extract all PO and rate information from the text and images provided."
+    )]
     user_content.extend(po_content)
 
     try:
         response = ai_client.chat.completions.create(
             model=model,
-            input=[
+            messages=[
                 {
                     "role": "system",
                     "content": PO_SYSTEM_PROMPT
@@ -225,23 +256,16 @@ def generate_po_details(po_content, ai_client, model):
                     "content": user_content
                 }
             ],
-            text={
-                "format": {
-                    "type": "json_schema",
-                    "name": po_schema["name"],
-                    "schema": po_schema["schema"],
-                    "strict": True
-                }
-            }
+            response_format=json_schema_response_format(po_schema),
         )
-        return json.loads(response.output_text)
+        return parse_chat_json_response(response)
     except json.JSONDecodeError as exc:
         raise RuntimeError("PO extraction returned invalid JSON.") from exc
     except Exception as exc:
         raise RuntimeError(f"PO extraction failed: {exc}") from exc
 
 ## PO Details Extraction from original or scanned PDF
-def get_po_data(po_w_pl, po_wo_pl, pl, haspl, openai_client):
+def get_po_data(po_w_pl, po_wo_pl, pl, haspl, ai_client, model):
   po_content = []
 
   try:
@@ -257,7 +281,7 @@ def get_po_data(po_w_pl, po_wo_pl, pl, haspl, openai_client):
       po_content.extend(po_pdf_to_openai_content(po_wo_pl))
       po_content.extend(po_pdf_to_openai_content(pl))
 
-    po_json = generate_po_details(po_content, openai_client)
+    po_json = generate_po_details(po_content, ai_client, model)
     return po_json
   except Exception as exc:
     raise RuntimeError(f"Could not extract PO data: {exc}") from exc
@@ -304,18 +328,21 @@ def file_to_base64(uploaded_file, dpi=300):
       doc.close()
 
 ## Timesheet Details Extraction using OpenAI
-def generate_ts_details(timesheet, client):
+def generate_ts_details(timesheet, ai_client, model):
   if not timesheet:
     raise ValueError("No timesheet images were provided for extraction.")
 
-  user_content = [{"type": "input_text", "text": "Extract the timesheet data."}]
+  user_content = [text_content("Extract the timesheet data.")]
   for image in timesheet:
-    user_content.append({"type": "input_image", "image_url": f"data:image/png;base64,{image}"})
+    user_content.append({
+        "type": "image_url",
+        "image_url": {"url": f"data:image/png;base64,{image}"},
+    })
 
   try:
-    response = client.responses.create(
-        model="gpt-5.5",
-        input=[
+    response = ai_client.chat.completions.create(
+        model=model,
+        messages=[
             {
                 "role": "system",
                 "content": TIMESHEET_SYSTEM_PROMPT
@@ -324,17 +351,10 @@ def generate_ts_details(timesheet, client):
                 "role": "user",
                 "content": user_content
             }],
-        text={
-            "format": {
-                "type": "json_schema",
-                "name": timesheet_schema["name"],
-                "schema": timesheet_schema["schema"],
-                "strict": True
-            }
-        }
+        response_format=json_schema_response_format(timesheet_schema),
     )
 
-    return json.loads(response.output_text)
+    return parse_chat_json_response(response)
   except json.JSONDecodeError as exc:
     raise RuntimeError("Timesheet extraction returned invalid JSON.") from exc
   except Exception as exc:
@@ -419,14 +439,14 @@ def normalize_timesheet_records(ts_json):
     return entries
 
 ## Timesheets Detail Extraction
-def get_timesheets_data(uploaded_files, client):
+def get_timesheets_data(uploaded_files, client, model):
     ts_details = {}
 
     for uploaded_file in uploaded_files:
         print(uploaded_file.name)
         try:
             timesheet = file_to_base64(uploaded_file)
-            ts_json = generate_ts_details(timesheet, client)
+            ts_json = generate_ts_details(timesheet, client, model)
         except Exception as exc:
             raise RuntimeError(f"Could not process timesheet '{uploaded_file.name}': {exc}") from exc
 
