@@ -20,21 +20,16 @@ from dateutil import parser
 ##################################
 
 ## Initialize OpenAI client
-def client(server_url: str):
+def client (APIkey):
     try:
-        client = OpenAI(
-            api_key="dummy",                 # vLLM ignores it by default
-            base_url=f"{server_url}/v1"
-        )
-
+        client = OpenAI(api_key = APIkey)
         error = False
-        status_text = "Qwen client initialized successfully."
+        status_text = "Client initialized successfully."
         return client, error, status_text
-
     except Exception as e:
         client = None
         error = True
-        status_text = f"Failed to initialize Qwen client: {e}"
+        status_text = f"Failed to initialize OpenAI client: {e}"
         return client, error, status_text
 
 ## Loading PO Json Schema
@@ -202,7 +197,7 @@ def po_pdf_to_openai_content(uploaded_file, dpi=220):
 
 
 ## PO Details Extraction using OpenAI
-def generate_po_details(po_content, ai_client):
+def generate_po_details(po_content, openai_client):
     if not po_content:
         raise ValueError("No PO content was provided for extraction.")
 
@@ -213,8 +208,8 @@ def generate_po_details(po_content, ai_client):
     user_content.extend(po_content)
 
     try:
-        response = ai_client.chat.completions.create(
-            model="qwen2.5-vl-32b-awq",
+        response = openai_client.responses.create(
+            model="gpt-5.5",
             input=[
                 {
                     "role": "system",
