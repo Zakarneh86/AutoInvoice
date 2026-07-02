@@ -2,7 +2,7 @@ import json
 import os
 import re
 from io import BytesIO
-from openai import OpenAI
+from openai import NotFoundError, OpenAI
 try:
     import pymupdf
 except ModuleNotFoundError:
@@ -25,12 +25,20 @@ def client(server_url: str, model: str | None = None):
         raise ValueError("RunPod server URL is required.")
 
     server_url = server_url.rstrip("/")
+    base_url = server_url if server_url.endswith("/v1") else f"{server_url}/v1"
     client = OpenAI(
         api_key="dummy",                 # vLLM ignores it by default
-        base_url=f"{server_url}/v1"
+        base_url=base_url
     )
 
-    models = client.models.list()
+    try:
+        models = client.models.list()
+    except NotFoundError as exc:
+        raise RuntimeError(
+            "RunPod Qwen server did not expose the OpenAI-compatible /v1/models endpoint. "
+            "Check that [runpod].url points to the vLLM OpenAI API server URL and that the server is running."
+        ) from exc
+
     available_models = [m.id for m in models.data]
 
     if model and model not in available_models:

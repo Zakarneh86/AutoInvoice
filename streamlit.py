@@ -261,7 +261,9 @@ except Exception as exc:
     error = True
     model = None
     status_text = f"RunPod Qwen client is not configured: {exc}"
-    show_error(f"RunPod Qwen client is not configured. Contact the Admin for Support", exc)
+    st.error("RunPod Qwen client is not configured. Contact the admin for support.")
+    with st.expander("Connection details"):
+        st.write(str(exc))
     
 
 try:
